@@ -12,9 +12,13 @@ import {
   Plus, Trash2, ChevronRight, ChevronLeft, IndianRupee, BarChart3,
   Receipt, ClipboardList, FileSpreadsheet, Shield, Zap, CheckCircle2,
   Info, TrendingDown, RefreshCw, UserPlus, BookOpen, RotateCcw,
-  FileDown, TableProperties, X, AlertTriangle
+  FileDown, TableProperties, X, AlertTriangle, Upload, Settings, Building2, Image as ImageIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import * as XLSX from 'xlsx';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 // ══════════════════════════════════════════════════════════════════
 // TYPES
@@ -165,7 +169,7 @@ const BLANK: EmployeeData = {
   salaryMonth:'March', salaryYear:'2025',
 };
 
-const TABS = ['profile','fixation','projection','salary','yearlysummary','arrears','salarybill','annualstatement','taxdetail'] as const;
+const TABS = ['profile','fixation','projection','salary','yearlysummary','arrears','salarybill','annualstatement','taxdetail','settings'] as const;
 type TabType = typeof TABS[number];
 
 const NAV_ITEMS = [
@@ -178,6 +182,7 @@ const NAV_ITEMS = [
   {id:'salarybill',      label:'Salary Bill',        icon:ClipboardList,  color:'#4f46e5'},
   {id:'annualstatement', label:'Annual Statement',   icon:FileSpreadsheet,color:'#0d9488'},
   {id:'taxdetail',       label:'Tax Comparison',     icon:Receipt,        color:'#ea580c'},
+  {id:'settings',        label:'Admin Settings',     icon:Settings,       color:'#475569'},
 ];
 
 // ══════════════════════════════════════════════════════════════════
@@ -245,37 +250,41 @@ function exportCSV(rows:any[][], filename:string) {
   a.download=filename; a.click();
 }
 
-// Print utility
-function doPrint(ref:React.RefObject<HTMLDivElement>, title:string) {
-  if(!ref.current) return;
-  const w=window.open('','_blank','width=1000,height=800');
-  if(!w) return;
-  w.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,sans-serif;background:#fff;color:#000;font-size:10px}
-    table{border-collapse:collapse;width:100%}
-    td,th{border:1px solid #000;padding:3px 5px}
-    th{background:#e8e8e8;font-weight:bold;text-align:center}
-    .no-print{display:none!important}
-    /* A4 print — proper margins, no clipping */
-    @page{size:A4 landscape;margin:10mm 8mm 10mm 8mm}
-    @media print{
-      *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
-      .no-print{display:none!important}
-      body{padding:0;margin:0}
-      table{page-break-inside:auto}
-      tr{page-break-inside:avoid;page-break-after:auto}
-      thead{display:table-header-group}
-      tfoot{display:table-footer-group}
-    }
-    @media screen{body{padding:12mm 10mm;max-width:297mm;margin:0 auto}}
-  </style></head><body>`);
-  w.document.write(ref.current.innerHTML);
-  w.document.write('</body></html>');
-  w.document.close();
-  setTimeout(()=>w.print(),600);
-}
+// Premium PDF Utility using html2canvas & jsPDF
+const downloadPDF = async (ref: React.RefObject<HTMLDivElement>, filename: string, orientation: 'p' | 'l' = 'p') => {
+  if (!ref.current) return;
+  
+  const originalStyle = ref.current.style.cssText;
+  ref.current.style.backgroundColor = '#ffffff';
+  // Andar ka extra padding hata diya taaki bahar ka margin perfect dikhe
+  ref.current.style.width = orientation === 'p' ? '800px' : '1120px'; 
+  
+  try {
+    const canvas = await html2canvas(ref.current, {
+      scale: 4, // 4x Ultra-HD Sharpness
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff'
+    });
+    
+    const imgData = canvas.toDataURL('image/png', 1.0);
+    const pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
+    
+    // ── STANDARD MARGIN LOGIC ADDED ──
+    const margin = 12; // 12mm ka standard margin chaaron taraf
+    const pdfWidth = pdf.internal.pageSize.getWidth() - (margin * 2);
+    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+    
+    // Ab image ko (0,0) ki jagah (margin, margin) se draw karna shuru karega
+    pdf.addImage(imgData, 'PNG', margin, margin, pdfWidth, pdfHeight);
+    pdf.save(`${filename}.pdf`);
+  } catch (err) {
+    console.error("PDF Generate hone mein error aaya:", err);
+    alert("PDF Generate nahi ho paya. Please try again.");
+  } finally {
+    ref.current.style.cssText = originalStyle;
+  }
+};
 
 // ══════════════════════════════════════════════════════════════════
 // UI PRIMITIVES
@@ -358,10 +367,49 @@ export default function App() {
   const [emp, setEmp]     = useState<EmployeeData>({...BLANK});
   const [showSlip, setShowSlip] = useState(false);
 
+  // Ye 4 lines (Refs) miss ho gayi thi, inhe wapas add kar diya hai
   const yearlyRef  = useRef<HTMLDivElement>(null);
   const billRef    = useRef<HTMLDivElement>(null);
   const annualRef  = useRef<HTMLDivElement>(null);
   const slipRef    = useRef<HTMLDivElement>(null);
+
+  // ── ADMIN MASTER CONFIG ──
+  const [sysConfig, setSysConfig] = useState({
+    collegeName: 'GURU NANAK COLLEGE',
+    address: 'Bhuda, Dhanbad, Jharkhand - 826001',
+    affiliatedTo: 'Binod Bihari Mahto Koylanchal University',
+    logoBase64: '',
+  });
+
+  // ── EXCEL PROFILE IMPORT / EXPORT LOGIC ──
+  const exportProfileToExcel = () => {
+    const profileData = [emp]; 
+    const worksheet = XLSX.utils.json_to_sheet(profileData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "EmployeeProfile");
+    const fileName = `${emp.name || 'Employee'}_Profile_Data.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+  };
+
+  const importProfileFromExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const binaryStr = evt.target?.result as string;
+      if (!binaryStr) return;
+      const workbook = XLSX.read(binaryStr, { type: 'binary' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const importedData = XLSX.utils.sheet_to_json<any>(worksheet);
+      if (importedData.length > 0) {
+        setEmp({ ...BLANK, ...importedData[0] });
+        alert("Employee data successfully loaded from Excel! 🎉");
+      }
+    };
+    e.target.value = '';
+    reader.readAsBinaryString(file);
+  };
 
   // Salary Arrear
   const [arrCfg, setArrCfg] = useState({startMonth:'2024-01',endMonth:'2026-03',startBasic:35400,level:6,paidDA:50,incMonth:'07' as '01'|'07'});
@@ -672,17 +720,45 @@ export default function App() {
   // SALARY SLIP COMPONENT (for print)
   // ══════════════════════════════════════════════════════════════
   const SalarySlip = () => (
-    <div ref={slipRef} className="bg-white font-serif" style={{fontFamily:'Georgia,serif'}}>
-      {/* Header */}
-      <div style={{textAlign:'center',borderBottom:'3px double #000',paddingBottom:'12px',marginBottom:'14px'}}>
-        <p style={{fontSize:'13px',fontWeight:'900',textTransform:'uppercase',letterSpacing:'2px'}}>Guru Nanak College, Dhanbad</p>
-        <p style={{fontSize:'11px',fontWeight:'bold',marginTop:'2px'}}>Non-Teaching Staff Salary Statement</p>
-        <div style={{display:'flex',justifyContent:'center',gap:'12px',marginTop:'8px'}}>
-          <span style={{border:'1px solid #000',padding:'2px 10px',fontSize:'9px',fontWeight:'bold',textDecoration:'underline'}}>PRO VERSION</span>
-          <span style={{border:'1px solid #000',padding:'2px 10px',fontSize:'9px',fontWeight:'bold',textDecoration:'underline'}}>Ref: GNC-{new Date().getFullYear()}</span>
+    <div ref={slipRef} className="bg-white relative overflow-hidden" style={{
+      fontFamily: '"Times New Roman", Times, serif', // Official standard font
+      padding: '30px 40px', // Ander ka space
+      border: '8px solid #1e3a8a', // Dark blue premium outer border
+      outline: '2px solid #000', // Black inner border line
+      outlineOffset: '-12px',
+      textRendering: 'optimizeLegibility',
+      WebkitFontSmoothing: 'antialiased',
+      minHeight: '800px'
+    }}>
+      
+      {/* ── WATERMARK ── */}
+      {sysConfig.logoBase64 && (
+        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.08, pointerEvents: 'none', zIndex: 0 }}>
+          <img src={sysConfig.logoBase64} alt="watermark" style={{ width: '450px', height: 'auto' }} />
         </div>
-        <p style={{fontSize:'9px',fontStyle:'italic',marginTop:'8px',color:'#555'}}>Generated by Guru Nanak College Pay Manager on {new Date().toLocaleString()}</p>
-      </div>
+      )}
+
+      {/* ── MAIN CONTENT WRAPPER ── */}
+      <div style={{ position: 'relative', zIndex: 1 }}>
+        {/* Header */}
+        <div style={{textAlign:'center',borderBottom:'3px double #000',paddingBottom:'12px',marginBottom:'14px', position: 'relative'}}>
+          {/* Dynamic Logo */}
+          {sysConfig.logoBase64 && (
+            <img src={sysConfig.logoBase64} alt="Logo" style={{position: 'absolute', left: '0px', top: '0', height: '65px', objectFit: 'contain'}} />
+          )}
+          <p style={{fontSize:'16px',fontWeight:'900',textTransform:'uppercase',letterSpacing:'2px', color:'#1e3a8a'}}>{sysConfig.collegeName}</p>
+          <p style={{fontSize:'10px', fontWeight:'bold', marginTop:'3px', color:'#333'}}>{sysConfig.address}</p>
+          <p style={{fontSize:'11px',fontWeight:'bold',marginTop:'6px', background:'#f0f0f0', display:'inline-block', padding:'4px 12px', border:'1px solid #000', letterSpacing:'1px'}}>Non-Teaching Staff Salary Statement</p>
+          <div style={{display:'flex',justifyContent:'center',gap:'12px',marginTop:'10px'}}>
+            <span style={{border:'1px solid #000',padding:'3px 12px',fontSize:'9px',fontWeight:'bold', background:'#fff'}}>
+              Ref No: GNC{String(Math.floor(Math.random() * 9999) + 1).padStart(4, '0')}
+            </span>
+            <span style={{border:'1px solid #000',padding:'3px 12px',fontSize:'9px',fontWeight:'bold', background:'#fff'}}>
+              Date: {new Date().toLocaleDateString('en-IN')}
+            </span>
+          </div>
+        </div>
+        </div>
 
       {/* Employee details */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'20px',marginBottom:'16px'}}>
@@ -764,18 +840,21 @@ export default function App() {
       )}
 
       {/* Signatures */}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',textAlign:'center',marginTop:'30px',gap:'20px'}}>
-        <div style={{borderTop:'1px solid #000',paddingTop:'6px',fontSize:'9px',fontWeight:'bold'}}>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',textAlign:'center',marginTop:'40px',gap:'20px'}}>
+        <div style={{borderTop:'1px solid #000',paddingTop:'6px',fontSize:'10px',fontWeight:'bold'}}>
           <p>Employee Signature</p><p style={{marginTop:'4px',fontStyle:'italic'}}>{fullName}</p>
         </div>
-        <div style={{borderTop:'1px solid #000',paddingTop:'6px',fontSize:'9px',fontWeight:'bold'}}>
-          <p>Dealing Assistant</p>
+        <div style={{borderTop:'1px solid #000',paddingTop:'6px',fontSize:'10px',fontWeight:'bold'}}>
+          <p>Accountant</p>
         </div>
-        <div style={{borderTop:'1px solid #000',paddingTop:'6px',fontSize:'9px',fontWeight:'bold'}}>
-          <p>Registrar / Principal / DDO</p><p style={{marginTop:'4px',fontStyle:'italic'}}>{emp.college||'—'}</p>
+        <div style={{borderTop:'1px solid #000',paddingTop:'6px',fontSize:'10px',fontWeight:'bold'}}>
+          <p>Principal</p><p style={{marginTop:'4px',fontStyle:'italic'}}>{emp.college||'—'}</p>
         </div>
       </div>
-    </div>
+      
+      </div> 
+    
+  
   );
 
   // ══════════════════════════════════════════════════════════════
@@ -793,9 +872,9 @@ export default function App() {
               <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between rounded-t-2xl">
                 <span className="font-black text-gray-800">Salary Slip Preview</span>
                 <div className="flex items-center gap-2">
-                  <button onClick={()=>doPrint(slipRef,'Salary Slip')} className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 text-white rounded-lg text-xs font-bold hover:bg-cyan-700">
-                    <Printer size={12}/> Print
-                  </button>
+                  <button onClick={()=>downloadPDF(slipRef, `Salary_Slip_${emp.name || 'Employee'}_${emp.salaryMonth}`, 'p')} className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 text-white rounded-lg text-xs font-bold hover:bg-cyan-700">
+  <Download size={12}/> Download PDF
+</button>
                   <button onClick={exportSalarySlip} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700">
                     <Download size={12}/> Export CSV
                   </button>
@@ -865,11 +944,35 @@ export default function App() {
               className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden min-h-[80vh]">
 
               {/* ════ PROFILE ════ */}
+              {/* ════ PROFILE ════ */}
               {tab==='profile'&&(
                 <div className="p-8">
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between mb-6">
                     <SectionHead title="Employee Profile" subtitle="Select designation for auto-fill. All sections update automatically." icon={User} accent="#16a34a"/>
-                    <ResetBtn onReset={()=>setEmp({...BLANK})} label="Reset All Fields"/>
+                    
+                    {/* NEW EXCEL BUTTONS */}
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="file" 
+                        accept=".xlsx, .xls" 
+                        id="import-excel" 
+                        style={{ display: 'none' }} 
+                        onChange={importProfileFromExcel} 
+                      />
+                      <label 
+                        htmlFor="import-excel" 
+                        className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded-xl cursor-pointer transition-all shadow-sm">
+                        <Upload size={14}/> Load from Excel
+                      </label>
+
+                      <button 
+                        onClick={exportProfileToExcel} 
+                        className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-green-700 bg-green-50 border border-green-200 hover:bg-green-100 rounded-xl transition-all shadow-sm">
+                        <Download size={14}/> Save to Excel
+                      </button>
+
+                      <ResetBtn onReset={()=>setEmp({...BLANK})} label="Reset All Fields"/>
+                    </div>
                   </div>
 
                   <div className="mb-6 p-3 bg-green-50 border border-green-200 rounded-xl flex items-center gap-2">
@@ -1162,6 +1265,33 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+
+                  {/* ════ VISUAL ANALYTICS: SALARY PIE CHART ════ */}
+                  {(() => {
+                    const pieData = [
+                      { name: 'Net Pay (In Hand)', value: s7.net, color: '#10b981' },
+                      { name: 'Total Deductions', value: s7.td, color: '#ef4444' }
+                    ];
+                    return (
+                      <div className="mt-6 p-5 bg-white border border-gray-200 rounded-2xl shadow-sm">
+                        <h3 className="text-[11px] font-black text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                          <BarChart3 size={14} className="text-indigo-500"/> Gross Salary Allocation
+                        </h3>
+                        <div className="h-[220px] w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                                {pieData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
+                              </Pie>
+                              <Tooltip formatter={(value: number) => rs(value)} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                              <Legend verticalAlign="bottom" height={36}/>
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <NavRow onPrev={goPrev} onNext={goNext}/>
                 </div>
               )}
@@ -1177,9 +1307,9 @@ export default function App() {
                         <input value={yearlyFY} onChange={e=>setYearlyFY(e.target.value)} className="w-20 bg-transparent text-sm font-bold text-amber-900 focus:outline-none"/>
                       </div>
                       <ResetBtn onReset={()=>setManDed({})} label="Reset Deductions"/>
-                      <button onClick={()=>doPrint(yearlyRef,'Yearly Summary')} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-200 border border-gray-300">
-                        <Printer size={12}/> Print
-                      </button>
+                      <button onClick={()=>downloadPDF(yearlyRef, `Yearly_Summary_${emp.name || 'Employee'}_${yearlyFY}`, 'l')} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-200 border border-gray-300">
+  <Download size={12}/> Download PDF
+</button>
                       <XlsBtn onClick={exportYearly} label="Export CSV"/>
                     </div>
                   </div>
@@ -1518,9 +1648,9 @@ export default function App() {
                     <SectionHead title="Salary Bill — Official Format" subtitle="Multi-employee · Old & New joiner support · Auto-calculated · Guru Nanak College format" icon={ClipboardList} accent="#4f46e5"/>
                     <div className="flex gap-2 mt-[-1rem]">
                       <ResetBtn onReset={()=>setSbEmps([])} label="Clear All"/>
-                      <button onClick={()=>doPrint(billRef,'Salary Bill')} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 shadow">
-                        <Printer size={14}/> Print Bill
-                      </button>
+                      <button onClick={()=>downloadPDF(billRef, `Salary_Bill_${sbCfg.month}_${sbCfg.year}`, 'l')} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 shadow">
+  <Download size={14}/> Download PDF Bill
+</button>
                     </div>
                   </div>
 
@@ -1806,9 +1936,9 @@ export default function App() {
                         <input value={asEmp.financialYear} onChange={e=>setAsEmp(p=>({...p,financialYear:e.target.value}))} className="w-20 bg-transparent text-sm font-bold text-teal-900 focus:outline-none"/>
                       </div>
                       <XlsBtn onClick={exportAnnual} label="Export CSV"/>
-                      <button onClick={()=>doPrint(annualRef,'Annual Statement')} className="flex items-center gap-2 px-4 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-bold hover:bg-teal-700 shadow">
-                        <Printer size={14}/> Print
-                      </button>
+                      <button onClick={()=>downloadPDF(annualRef, `Annual_Statement_${emp.name || 'Employee'}_${asEmp.financialYear}`, 'l')} className="flex items-center gap-2 px-4 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-bold hover:bg-teal-700 shadow">
+  <Download size={14}/> Download PDF
+</button>
                     </div>
                   </div>
                   <div ref={annualRef} className="bg-white border-2 border-gray-800 p-4 rounded-lg">
@@ -1977,10 +2107,115 @@ export default function App() {
                       <p className="text-xs text-gray-400 mt-2">New Regime</p><p className="text-lg font-black text-blue-700">{rs(taxDet.taxNew)}</p>
                     </div>
                   </div>
+
+                  {/* ════ VISUAL ANALYTICS: TAX BAR CHART ════ */}
+                  <div className="mt-6 p-6 bg-white border border-gray-200 rounded-2xl shadow-sm">
+                    <h3 className="text-[11px] font-black text-gray-500 uppercase tracking-widest mb-6 flex items-center gap-2">
+                      <BarChart3 size={14} className="text-orange-500"/> Old vs New Regime Visual Comparison
+                    </h3>
+                    <div className="h-[280px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={[
+                          { name: 'Gross Income', 'Old Regime': taxDet.gross, 'New Regime': taxDet.gross },
+                          { name: 'Deductions Allowed', 'Old Regime': taxDet.std + taxDet.c80 + taxDet.c80d + taxDet.npsV + taxDet.hl + taxDet.pt12, 'New Regime': taxDet.std2 + taxDet.npsEr12 },
+                          { name: 'Taxable Income', 'Old Regime': taxDet.txOld, 'New Regime': taxDet.txNew },
+                          { name: 'Total Tax', 'Old Regime': taxDet.taxOld, 'New Regime': taxDet.taxNew }
+                        ]} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                          <XAxis dataKey="name" tick={{fontSize: 11, fill: '#6b7280'}} axisLine={false} tickLine={false} />
+                          <YAxis tickFormatter={(value) => `₹${value >= 100000 ? (value/100000).toFixed(1) + 'L' : value}`} tick={{fontSize: 11, fill: '#6b7280'}} axisLine={false} tickLine={false}/>
+                          <Tooltip formatter={(value: number) => rs(value)} cursor={{fill: '#f3f4f6'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                          <Legend wrapperStyle={{fontSize: '12px', paddingTop: '10px'}}/>
+                          <Bar dataKey="Old Regime" fill="#f97316" radius={[4, 4, 0, 0]} maxBarSize={50} animationDuration={1000} />
+                          <Bar dataKey="New Regime" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={50} animationDuration={1000} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
                   <NavRow onPrev={goPrev} showNext={false}/>
                 </div>
               )}
+            {/* ════ ADMIN SETTINGS ════ */}
+              {tab==='settings'&&(
+                <div className="p-8">
+                  <SectionHead title="Master Admin Settings" subtitle="Global configuration for College Name, Address, and Official Logo" icon={Settings} accent="#475569"/>
+                  
+                  <div className="grid grid-cols-2 gap-8">
+                    {/* Form Panel */}
+                    <div className="space-y-5">
+                      <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl">
+                        <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                          <Building2 size={14}/> Institution Details
+                        </h3>
+                        <div className="space-y-4">
+                          <div>
+                            <Lbl c="College / University Name"/>
+                            <TIn value={sysConfig.collegeName} onChange={(v:string)=>setSysConfig(p=>({...p, collegeName: v}))} placeholder="e.g. Guru Nanak College"/>
+                          </div>
+                          <div>
+                            <Lbl c="Complete Address"/>
+                            <TIn value={sysConfig.address} onChange={(v:string)=>setSysConfig(p=>({...p, address: v}))} placeholder="e.g. Bhuda, Dhanbad"/>
+                          </div>
+                          <div>
+                            <Lbl c="Affiliation (Optional)"/>
+                            <TIn value={sysConfig.affiliatedTo} onChange={(v:string)=>setSysConfig(p=>({...p, affiliatedTo: v}))} placeholder="e.g. BBMKU University"/>
+                          </div>
+                        </div>
+                      </div>
 
+                      <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl">
+                        <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                          <ImageIcon size={14}/> Official Logo Upload
+                        </h3>
+                        <div className="flex items-center gap-4">
+                          <div className="w-20 h-20 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center bg-white overflow-hidden shrink-0">
+                            {sysConfig.logoBase64 ? (
+                              <img src={sysConfig.logoBase64} alt="Logo" className="w-full h-full object-contain p-1"/>
+                            ) : (
+                              <Building2 size={24} className="text-slate-300"/>
+                            )}
+                          </div>
+                          <div className="flex-1">
+                            <input 
+                              type="file" accept="image/png, image/jpeg" id="logo-upload" className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if(file) {
+                                  const reader = new FileReader();
+                                  reader.onload = (evt) => setSysConfig(p=>({...p, logoBase64: evt.target?.result as string}));
+                                  reader.readAsDataURL(file);
+                                }
+                              }}
+                            />
+                            <label htmlFor="logo-upload" className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-xl cursor-pointer hover:bg-slate-700 transition-all shadow-md">
+                              <Upload size={14}/> Upload New Logo
+                            </label>
+                            <p className="text-[10px] text-slate-400 mt-2">Upload a transparent PNG or JPG. This logo will automatically appear on all Salary Slips and printed bills.</p>
+                            {sysConfig.logoBase64 && (
+                              <button onClick={()=>setSysConfig(p=>({...p, logoBase64: ''}))} className="text-[10px] font-bold text-red-500 mt-2 hover:text-red-700">Remove Logo</button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Live Preview Panel */}
+                    <div>
+                      <div className="sticky top-24 p-6 bg-white border-2 border-slate-200 rounded-2xl shadow-lg">
+                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 text-center">Live Document Header Preview</h3>
+                        <div className="border-b-2 border-double border-black pb-4 text-center flex flex-col items-center">
+                          {sysConfig.logoBase64 && <img src={sysConfig.logoBase64} alt="Logo" className="h-16 mb-3 object-contain"/>}
+                          <h1 className="text-xl font-black uppercase tracking-wider text-black">{sysConfig.collegeName}</h1>
+                          <p className="text-xs font-bold text-gray-800 mt-1">{sysConfig.address}</p>
+                          {sysConfig.affiliatedTo && <p className="text-[10px] font-medium text-gray-600 mt-0.5">Affiliated to {sysConfig.affiliatedTo}</p>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <NavRow onPrev={goPrev} showNext={false}/>
+                </div>
+              )}
             </motion.div>
           </AnimatePresence>
         </main>
