@@ -513,7 +513,7 @@ export default function App() {
   // Multi-profile state
   const [profiles, setProfiles] = useState<EmployeeData[]>(()=>{
     try{ const s=localStorage.getItem('gnc_profiles_v8'); if(s) return JSON.parse(s); } catch(e){}
-    return [BLANK_PROFILE(uid(),{name:'Sri Sadhan Kumar Mishra',salutation:'Sri.',designation:'Assistant (UDC)',college:'Guru Nanak College',panNumber:'AKKPM5534D',dateOfJoining:'02.05.2011',payLevel:6,basicPay7th:52000,daRate:53,hraCategory:'Y',bandPayOld:15600,gradePayOld:4200,licDeduction:5772,annualLIC:69260,annualPPF:100000,homeLoanPrincipal:83832,homeLoanInterest:180743,mediclaim:31191,applyNPS:true,applyGSLI:true,applyLIC:true,applyIT:true,category:'non-teaching',color:'#2563eb',isStarred:true,additionalIncome1Label:'IGNOU Remuneration',additionalIncome1:27720,additionalIncome2Label:'BCA Remuneration',additionalIncome2:12000})];
+    return [BLANK_PROFILE(uid(),{name:'Sri Sadhan Kumar Mishra',salutation:'Sri.',designation:'Assistant (UDC)',college:'Guru Nanak College',panNumber:'AKKPM5534D',dateOfJoining:'02.05.2011',dateOfBirth:'15.08.1985',payLevel:6,basicPay7th:52000,daRate:53,hraCategory:'Y',bandPayOld:15600,gradePayOld:4200,licDeduction:5772,annualLIC:69260,annualPPF:100000,homeLoanPrincipal:83832,homeLoanInterest:180743,mediclaim:31191,applyNPS:true,applyGSLI:true,applyLIC:true,applyIT:true,category:'non-teaching',color:'#2563eb',isStarred:true,additionalIncome1Label:'IGNOU Remuneration',additionalIncome1:27720,additionalIncome2Label:'BCA Remuneration',additionalIncome2:12000})];
   });
   useEffect(()=>{ localStorage.setItem('gnc_profiles_v8',JSON.stringify(profiles)); },[profiles]);
 
@@ -549,6 +549,7 @@ export default function App() {
   const [profileView, setProfileView] = useState<'grid'|'list'>('grid');
   const [selectedForCompare, setSelectedForCompare] = useState<string[]>([]);
   const [showSlip, setShowSlip] = useState(false);
+  const [retirementTab, setRetirementTab] = useState<'projection'|'actual'>('projection');
   const [yearlyFY, setYearlyFY] = useState('2024-25');
   const [manDed, setManDed] = useState<Record<string,Record<string,number>>>({});
   const [arrCfg, setArrCfg] = useState({startMonth:'2023-12',endMonth:'2025-03',startBasic:35400,level:6,paidDA:50,incMonth:'07' as '01'|'07'});
@@ -770,7 +771,7 @@ export default function App() {
           <p style={{fontSize:'11px',fontWeight:'bold',marginTop:'6px',background:'#f0f0f0',display:'inline-block',padding:'4px 14px',border:'1px solid #000'}}>Non-Teaching Staff Salary Slip — {emp.salaryMonth} {emp.salaryYear}</p>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'18px',marginBottom:'14px'}}>
-          <div>{[['Name',fullName],['Designation',emp.designation],['Department',emp.department],['PAN',emp.panNumber||'—'],['Joining Date',emp.dateOfJoining]].map(([k,v])=><p key={k} style={{display:'flex',justifyContent:'space-between',borderBottom:'1px dotted #ccc',paddingBottom:'3px',marginBottom:'3px',fontSize:'10px'}}><strong>{k}:</strong><span>{v}</span></p>)}</div>
+          <div>{[['Name',fullName],['Designation',emp.designation],['Department',emp.department],['PAN',emp.panNumber||'—'],['Date of Birth',emp.dateOfBirth||'—'],['Joining Date',emp.dateOfJoining]].map(([k,v])=><p key={k} style={{display:'flex',justifyContent:'space-between',borderBottom:'1px dotted #ccc',paddingBottom:'3px',marginBottom:'3px',fontSize:'10px'}}><strong>{k}:</strong><span>{v}</span></p>)}</div>
           <div>{[['PRAN',emp.pranNumber||'—'],['Bank A/c',emp.bankAccount||'—'],['IFSC',emp.ifscCode||'—'],['Level',`Level ${emp.payLevel}`],['Tax Regime',emp.taxRegime==='new'?'New Regime':'Old Regime']].map(([k,v])=><p key={k} style={{display:'flex',justifyContent:'space-between',borderBottom:'1px dotted #ccc',paddingBottom:'3px',marginBottom:'3px',fontSize:'10px'}}><strong>{k}:</strong><span>{v}</span></p>)}</div>
         </div>
         <div style={{border:'2px solid #000',marginBottom:'12px'}}>
@@ -1218,7 +1219,16 @@ export default function App() {
                     <div><Lbl c="PRAN Number"/><TIn value={emp.pranNumber} onChange={setE('pranNumber')}/></div>
                     <div><Lbl c="Bank Account"/><TIn value={emp.bankAccount} onChange={setE('bankAccount')}/></div>
                     <div><Lbl c="IFSC Code"/><TIn value={emp.ifscCode} onChange={setE('ifscCode')}/></div>
-                    <div><Lbl c="Date of Joining"/><TIn value={emp.dateOfJoining} onChange={setE('dateOfJoining')} placeholder="DD.MM.YYYY"/></div>
+                    <div>
+                      <Lbl c="Date of Joining"/>
+                      <TIn value={emp.dateOfJoining} onChange={setE('dateOfJoining')} placeholder="DD.MM.YYYY or DD-MM-YYYY"/>
+                      <p className="text-[9px] text-gray-400 mt-1">Format: DD.MM.YYYY e.g. 02.05.2011</p>
+                    </div>
+                    <div>
+                      <Lbl c="Date of Birth ★"/>
+                      <TIn value={emp.dateOfBirth} onChange={setE('dateOfBirth')} placeholder="DD.MM.YYYY or DD-MM-YYYY"/>
+                      <p className="text-[9px] text-amber-500 mt-1 font-bold">★ Required for Retirement calculation</p>
+                    </div>
                     <div><Lbl c="Financial Year"/><TSel value={emp.financialYear} onChange={setE('financialYear')} options={FY_YEARS}/></div>
                     <div><Lbl c="Increment Month"/><TSel value={emp.incrementMonth} onChange={(v:any)=>setEmp((p:EmployeeData)=>({...p,incrementMonth:v}))} options={[{value:'07',label:'July (Standard)'},{value:'01',label:'January'}]}/></div>
                   </div>
@@ -1926,321 +1936,513 @@ export default function App() {
               {/* ══════ RETIREMENT ══════ */}
               {tab==='retirement'&&(()=>{
 
-                // ── Robust DOJ parser: handles DD.MM.YYYY, DD/MM/YYYY, YYYY-MM-DD ──
-                const parseDOJ = (doj: string): Date|null => {
-                  if(!doj || doj.trim()==='') return null;
-                  // Try DD.MM.YYYY or DD/MM/YYYY
-                  const sep = doj.includes('.') ? '.' : doj.includes('/') ? '/' : '-';
-                  const parts = doj.split(sep);
-                  if(parts.length === 3) {
-                    if(parts[0].length === 4) {
-                      // YYYY-MM-DD
-                      return new Date(`${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`);
-                    } else {
-                      // DD.MM.YYYY or DD/MM/YYYY
-                      return new Date(`${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`);
-                    }
-                  }
-                  return null;
+                // ── Universal date parser: DD.MM.YYYY / DD/MM/YYYY / DD-MM-YYYY / YYYY-MM-DD ──
+                const parseDate = (d: string): Date|null => {
+                  if(!d||!d.trim()) return null;
+                  // Detect separator
+                  const sep = d.includes('-') ? '-' : d.includes('.') ? '.' : d.includes('/') ? '/' : null;
+                  if(!sep) return null;
+                  const p = d.split(sep);
+                  if(p.length !== 3) return null;
+                  // YYYY-MM-DD  vs  DD-MM-YYYY
+                  const [a,b,c] = p;
+                  let yr: number, mo: number, dy: number;
+                  if(a.length===4){ yr=parseInt(a); mo=parseInt(b); dy=parseInt(c); }
+                  else            { dy=parseInt(a); mo=parseInt(b); yr=parseInt(c); }
+                  if(isNaN(yr)||isNaN(mo)||isNaN(dy)) return null;
+                  const dt = new Date(yr, mo-1, dy);
+                  if(isNaN(dt.getTime())) return null;
+                  return dt;
                 };
 
-                const dojDate = parseDOJ(emp.dateOfJoining);
-                const today   = new Date();
-                const curYear = today.getFullYear();
+                const today    = new Date();
+                const curYear  = today.getFullYear();
 
-                // Years already served (precise)
+                // ── DOB-based retirement (Govt superannuation = 60 yrs) ──
+                const dobDate  = parseDate(emp.dateOfBirth);
+                const dojDate  = parseDate(emp.dateOfJoining);
+
+                // Age as of today
+                const ageYears = dobDate
+                  ? Math.floor((today.getTime()-dobDate.getTime())/(1000*60*60*24*365.25))
+                  : null;
+
+                // Retirement date = DOB + 60 years
+                const retDate  = dobDate ? new Date(dobDate.getFullYear()+60, dobDate.getMonth(), dobDate.getDate()) : null;
+                const retYear  = retDate ? retDate.getFullYear() : curYear + 30;
+
+                // Years served from DOJ
                 const yearsServedSoFar = dojDate
-                  ? Math.max(0, Math.floor((today.getTime() - dojDate.getTime()) / (1000*60*60*24*365.25)))
+                  ? Math.max(0, Math.floor((today.getTime()-dojDate.getTime())/(1000*60*60*24*365.25)))
                   : 0;
 
-                // Government superannuation age = 60 years from DOJ year
-                // Total career = 60 - age at joining (min 33, max 40)
-                const joinYear  = dojDate ? dojDate.getFullYear() : curYear - yearsServedSoFar;
-                const retirementYear = joinYear + Math.max(33, Math.min(40, emp.serviceYears));
-                const yearsRemaining = Math.max(0, retirementYear - curYear);
-                const totalCareerYears = Math.max(yearsServedSoFar, retirementYear - joinYear);
+                // Years remaining till retirement (from today)
+                const yearsRemaining = Math.max(0, retYear - curYear);
 
-                // ── Full Increment Trail: current year → retirement year ──────────
-                // Includes MACP level upgrades at 10, 20, 30 years of service
+                // Total qualifying service = DOJ to Retirement date
+                const totalQualifyingYrs = dojDate && retDate
+                  ? Math.min(40, Math.max(0, Math.floor((retDate.getTime()-dojDate.getTime())/(1000*60*60*24*365.25))))
+                  : emp.serviceYears;
+
+                // ── Build Full Increment Trail with MACP ────────────────────
                 interface TrailRow {
-                  year: number;
-                  basic: number;
-                  level: number;
-                  isMacp: boolean;
-                  macpNote: string;
-                  isRetirement: boolean;
-                  isCurrent: boolean;
+                  year:number; basic:number; level:number;
+                  isMacp:boolean; macpNote:string; isRetirement:boolean; isCurrent:boolean;
                 }
-                const buildIncrementTrail = (): TrailRow[] => {
+                const buildTrail = (startBasic:number, startLevel:number, startYrsServed:number, totalYrs:number): TrailRow[] => {
                   const trail: TrailRow[] = [];
-                  let basic = emp.basicPay7th;
-                  let level = emp.payLevel;
-
-                  for (let i = 0; i <= Math.min(yearsRemaining, 42); i++) {
+                  let basic = startBasic, level = startLevel;
+                  for(let i=0; i<=Math.min(totalYrs,42); i++){
                     const yr = curYear + i;
-                    const serviceYrAtThisPoint = yearsServedSoFar + i;
-                    const isMacp10 = serviceYrAtThisPoint > 0 && serviceYrAtThisPoint % 10 === 0 && i > 0;
-                    let macpNote = '';
-                    let didMacp  = false;
-
-                    // MACP: upgrade level at exactly 10, 20, 30 years of total service
-                    if (isMacp10 && level < 14) {
-                      level = Math.min(level + 1, 14);
-                      // Re-fix basic into new level (find equal or next higher cell)
-                      const newMat = PAY_MATRIX[level] || [];
-                      const fixedBasic = newMat.find(v => v >= basic) || newMat[newMat.length-1] || basic;
-                      basic = fixedBasic;
+                    const svcYr = startYrsServed + i;
+                    // MACP at every 10-year mark of service
+                    const isMacp = i>0 && svcYr>0 && svcYr%10===0 && level<14;
+                    let macpNote='', didMacp=false;
+                    if(isMacp){
+                      level = Math.min(level+1, 14);
+                      const newMat = PAY_MATRIX[level]||[];
+                      basic = newMat.find(v=>v>=basic)||newMat[newMat.length-1]||basic;
                       macpNote = `MACP → Level ${level}`;
                       didMacp = true;
                     }
-
-                    trail.push({
-                      year: yr,
-                      basic,
-                      level,
-                      isMacp: didMacp,
-                      macpNote,
-                      isRetirement: i === yearsRemaining,
-                      isCurrent: i === 0,
-                    });
-
-                    // Annual increment for next year
+                    trail.push({year:yr, basic, level, isMacp:didMacp, macpNote, isRetirement:i===totalYrs, isCurrent:i===0});
                     basic = nextStep(basic, level);
                   }
                   return trail;
                 };
 
-                const incrementTrail = buildIncrementTrail();
-                const retRow   = incrementTrail[incrementTrail.length - 1];
-                const retBasic = retRow?.basic ?? emp.basicPay7th;
-                const retLevel = retRow?.level ?? emp.payLevel;
+                // PROJECTION TRAIL: from current basic, remaining years
+                const projTrail  = buildTrail(emp.basicPay7th, emp.payLevel, yearsServedSoFar, yearsRemaining);
+                const projRetRow = projTrail[projTrail.length-1]||projTrail[0];
+                const projBasic  = projRetRow.basic;
+                const projLevel  = projRetRow.level;
 
-                const retDA    = emp.daRate;
-                const gratuity = Math.min(((retBasic + pct(retBasic, retDA)) * 15 * totalCareerYears) / 26, 2000000);
-                const leaveEnc = ((retBasic + pct(retBasic, retDA)) * emp.earnedLeaves) / 30;
-                const npsMonthly = pct(retBasic + pct(retBasic, retDA), 24);
+                // ── Actual Retirement State ─────────────────────────────────
+                // For Tab 2: employee is retiring NOW — use current basic
+                const actualLastBasic = emp.basicPay7th;
+                const actualDA        = emp.daRate;
+                const actualGratuity  = Math.min(
+                  ((actualLastBasic+pct(actualLastBasic,actualDA))*15*Math.min(totalQualifyingYrs,33))/26,
+                  2000000
+                );
+                const actualLeaveEnc  = ((actualLastBasic+pct(actualLastBasic,actualDA))*emp.earnedLeaves)/30;
+                const actualNPS       = pct(actualLastBasic+pct(actualLastBasic,actualDA),24);
+
+                // PROJECTION values
+                const projDA       = emp.daRate;
+                const projGratuity = Math.min(
+                  ((projBasic+pct(projBasic,projDA))*15*Math.min(totalQualifyingYrs,33))/26,
+                  2000000
+                );
+                const projLeaveEnc = ((projBasic+pct(projBasic,projDA))*emp.earnedLeaves)/30;
+                const projNPS      = pct(projBasic+pct(projBasic,projDA),24);
+
+                const fmtDate = (d:Date|null) => d ? d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—';
 
                 return (
                 <div className="p-6">
-                  <SectionHead title="Retirement & Gratuity Benefits" subtitle={`${fullName} · Last Basic auto-calculated from service years`} icon={Award} accent="#eab308"/>
+                  <SectionHead title="Retirement & Gratuity Benefits" subtitle={`${fullName} · DOB-based calculation · Superannuation age: 60 years`} icon={Award} accent="#eab308"/>
 
-                  <div className="grid grid-cols-2 gap-6 mb-6">
-                    {/* ── LEFT: Inputs ── */}
-                    <div className="p-5 bg-gray-50 border border-gray-200 rounded-2xl space-y-4">
-                      <h3 className="font-black text-sm text-gray-700 border-b pb-2 flex items-center gap-2">
-                        <Settings size={14} className="text-gray-500"/> Input Parameters
-                      </h3>
-
-                      {/* DA at Retirement */}
-                      <div>
-                        <Lbl c="DA Rate at Retirement (%)"/>
-                        <TSel value={emp.daRate} onChange={(v:string)=>setEmp((p:EmployeeData)=>({...p,daRate:Number(v)}))}
-                          options={[{value:55,label:'55% (Jan 2025 — Confirmed)'},{value:58,label:'58% (Jul 2025 — Projected)'},{value:61,label:'61% (Jan 2026 — Projected)'},{value:65,label:'65% (Projected)'},{value:70,label:'70% (Projected)'},{value:75,label:'75% (Projected)'},{value:80,label:'80% (Projected)'}]}/>
-                      </div>
-
-                      {/* Qualifying Service — AUTO computed from DOJ */}
-                      <div>
-                        <Lbl c="Total Career / Service Years (Override if needed)"/>
-                        <TIn type="number" value={emp.serviceYears}
-                          onChange={(v:string)=>setEmp((p:EmployeeData)=>({...p,serviceYears:Math.max(1,Math.min(42,Number(v)||33))}))}/>
-                        <div className="mt-2 p-2.5 bg-green-50 border border-green-200 rounded-lg space-y-1">
-                          <div className="flex justify-between text-[10px]">
-                            <span className="text-gray-500">Date of Joining:</span>
-                            <span className="font-bold text-gray-700">{emp.dateOfJoining || '⚠ Not set in Profile'}</span>
-                          </div>
-                          <div className="flex justify-between text-[10px]">
-                            <span className="text-gray-500">Years Served So Far:</span>
-                            <span className="font-bold text-green-700">{yearsServedSoFar} years</span>
-                          </div>
-                          <div className="flex justify-between text-[10px]">
-                            <span className="text-gray-500">Est. Retirement Year:</span>
-                            <span className="font-bold text-amber-700">{retirementYear}</span>
-                          </div>
-                          <div className="flex justify-between text-[10px] border-t border-green-200 pt-1">
-                            <span className="text-gray-500">Years Remaining:</span>
-                            <span className="font-black text-blue-700">{yearsRemaining} years</span>
-                          </div>
-                        </div>
-                        {!dojDate && (
-                          <p className="text-[10px] text-red-500 mt-1 font-bold">
-                            ⚠ Set Date of Joining in Profile tab for accurate auto-calculation
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Earned Leaves */}
-                      <div>
-                        <Lbl c="Earned Leaves Balance (Max 300 days)"/>
-                        <TIn type="number" value={emp.earnedLeaves}
-                          onChange={(v:string)=>setEmp((p:EmployeeData)=>({...p,earnedLeaves:Math.min(Number(v)||0,300)}))}/>
-                      </div>
-
-                      {/* AUTO-CALCULATED RESULT BOX */}
-                      <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-xl">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Zap size={14} className="text-amber-600"/>
-                          <p className="text-[11px] font-black text-amber-700 uppercase tracking-wider">Auto-Calculated Last Basic Pay</p>
-                        </div>
-                        <p className="text-3xl font-black text-amber-800">{rs(retBasic)}</p>
-                        <div className="mt-2 space-y-1 text-[10px] text-amber-700">
-                          <div className="flex justify-between"><span>Current Basic (now):</span><span className="font-bold">{rs(emp.basicPay7th)}</span></div>
-                          <div className="flex justify-between"><span>Pay Level:</span><span className="font-bold">Level {emp.payLevel}</span></div>
-                          <div className="flex justify-between"><span>Increments Applied:</span><span className="font-bold">{yearsRemaining} annual increments</span></div>
-                          <div className="flex justify-between"><span>Retirement Year (est.):</span><span className="font-bold">{retirementYear}</span></div>
-                          <div className="flex justify-between border-t border-amber-200 pt-1 mt-1"><span>DA at Retirement:</span><span className="font-bold">{retDA}%</span></div>
-                          <div className="flex justify-between"><span>Last DA Amount:</span><span className="font-bold">{rs(pct(retBasic,retDA))}</span></div>
-                          <div className="flex justify-between font-black text-amber-900 border-t border-amber-300 pt-1 mt-1"><span>Basic + DA:</span><span>{rs(retBasic+pct(retBasic,retDA))}</span></div>
-                        </div>
-                        {retLevel !== emp.payLevel && (
-                          <div className="mt-2 p-2 bg-amber-100 border border-amber-300 rounded-lg">
-                            <p className="text-[10px] font-black text-amber-800">
-                              ⬆ MACP Upgrades Applied: Level {emp.payLevel} → Level {retLevel}
-                            </p>
-                          </div>
-                        )}
-                        <p className="text-[9px] text-amber-500 mt-2 italic">
-                          Auto-calculated · {yearsServedSoFar} yrs served + {yearsRemaining} yrs remaining · MACP included
+                  {/* ── Missing fields warning ── */}
+                  {(!emp.dateOfBirth || !emp.dateOfJoining) && (
+                    <div className="mb-5 p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
+                      <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5"/>
+                      <div className="text-sm">
+                        <p className="font-black text-red-700">Missing Fields for Accurate Calculation</p>
+                        <p className="text-red-600 text-xs mt-0.5">
+                          {!emp.dateOfBirth && <span>• <strong>Date of Birth</strong> not set (needed for retirement year) </span>}
+                          {!emp.dateOfJoining && <span>• <strong>Date of Joining</strong> not set (needed for qualifying service) </span>}
+                          — Go to <strong>Edit Profile</strong> tab and fill these fields.
                         </p>
                       </div>
                     </div>
+                  )}
 
-                    {/* ── RIGHT: Benefit Cards ── */}
-                    <div className="space-y-4">
-                      {[
-                        {
-                          t:'Death-cum-Retirement Gratuity',
-                          icon:Award, color:'#d97706',
-                          val: gratuity,
-                          note:`(${rs(retBasic)}+${rs(pct(retBasic,retDA))}) × 15/26 × ${emp.serviceYears} yrs`,
-                          cap:'Max: ₹20,00,000',
-                          sub: gratuity >= 2000000 ? '⚠ Capped at ₹20L' : `${((gratuity/2000000)*100).toFixed(0)}% of max cap`,
-                        },
-                        {
-                          t:'Leave Encashment',
-                          icon:BookOpen, color:'#16a34a',
-                          val: leaveEnc,
-                          note:`(${rs(retBasic)}+${rs(pct(retBasic,retDA))}) × ${emp.earnedLeaves} days / 30`,
-                          cap:'Max: 300 days EL',
-                          sub:`${emp.earnedLeaves} days × (Basic+DA)/30`,
-                        },
-                        {
-                          t:'Monthly NPS at Retirement',
-                          icon:TrendingUp, color:'#7c3aed',
-                          val: npsMonthly,
-                          note:`Emp 10% + Govt 14% = 24% of (${rs(retBasic)}+DA)`,
-                          cap:'24% per month',
-                          sub:`Annual: ${rs(npsMonthly*12)}`,
-                        },
-                      ].map(item=>(
-                        <div key={item.t} className="p-5 rounded-2xl border-2 flex items-start gap-4"
-                          style={{background:item.color+'08',borderColor:item.color+'33'}}>
-                          <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-                            style={{background:item.color+'18'}}><item.icon size={22} style={{color:item.color}}/></div>
-                          <div className="flex-1">
-                            <p className="text-xs font-black uppercase tracking-wider mb-1" style={{color:item.color}}>{item.t}</p>
-                            <p className="text-2xl font-black text-gray-900">{rs(Math.round(item.val))}</p>
-                            <p className="text-[10px] text-gray-400 mt-1">{item.note}</p>
-                            <p className="text-[10px] font-bold mt-0.5" style={{color:item.color+'99'}}>{item.sub}</p>
+                  {/* ── Key Date Summary Strip ── */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                    {[
+                      {l:'Date of Birth',       v:emp.dateOfBirth||'Not set',   col:'#7c3aed', warn:!emp.dateOfBirth},
+                      {l:'Date of Joining',      v:emp.dateOfJoining||'Not set', col:'#2563eb', warn:!emp.dateOfJoining},
+                      {l:'Current Age',          v:ageYears!=null?`${ageYears} yrs`:'Set DOB',  col:'#0891b2', warn:ageYears==null},
+                      {l:'Retirement Date (est)',v:fmtDate(retDate),             col:'#d97706', warn:!retDate},
+                    ].map(c=>(
+                      <div key={c.l} className={`p-3 rounded-xl border ${c.warn?'bg-red-50 border-red-200':'bg-white border-gray-200'}`}>
+                        <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">{c.l}</p>
+                        <p className="text-sm font-black" style={{color:c.warn?'#dc2626':c.col}}>{c.v}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                    {[
+                      {l:'Years Served So Far', v:`${yearsServedSoFar} years`,     col:'#16a34a'},
+                      {l:'Years Remaining',      v:`${yearsRemaining} years`,       col:'#d97706'},
+                      {l:'Retirement Year',      v:String(retYear),                col:'#ea580c'},
+                      {l:'Qualifying Service',   v:`${totalQualifyingYrs} years`,  col:'#7c3aed'},
+                    ].map(c=>(
+                      <div key={c.l} className="p-3 rounded-xl border bg-white border-gray-200">
+                        <p className="text-[9px] font-bold text-gray-400 uppercase mb-1">{c.l}</p>
+                        <p className="text-lg font-black" style={{color:c.col}}>{c.v}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* ── TWO TABS ── */}
+                  <div className="flex gap-1 p-1 bg-gray-100 rounded-xl mb-6 w-fit">
+                    {([
+                      ['projection', '📈 Future Projection', 'See salary & benefits at retirement (years ahead)'],
+                      ['actual',     '✅ Actual Retirement Now', 'Calculate final benefits for employee retiring today'],
+                    ] as const).map(([id,label,sub])=>(
+                      <button key={id} onClick={()=>setRetirementTab(id)}
+                        className={`flex flex-col items-start px-5 py-2.5 rounded-lg transition-all ${retirementTab===id?'bg-white shadow text-gray-900':'text-gray-500 hover:text-gray-700'}`}>
+                        <span className="text-sm font-black">{label}</span>
+                        <span className="text-[10px] text-gray-400 mt-0.5">{sub}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* ════ TAB 1: FUTURE PROJECTION ════ */}
+                  {retirementTab==='projection'&&(
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Left: Inputs */}
+                        <div className="p-5 bg-amber-50 border border-amber-200 rounded-2xl space-y-4">
+                          <h3 className="font-black text-sm text-amber-800 flex items-center gap-2 pb-2 border-b border-amber-200">
+                            <Settings size={14}/> Projection Parameters
+                          </h3>
+                          <div>
+                            <Lbl c="DA Rate at Retirement (Projected %)"/>
+                            <TSel value={emp.daRate} onChange={(v:string)=>setEmp((p:EmployeeData)=>({...p,daRate:Number(v)}))}
+                              options={[
+                                {value:55,label:'55% — Jan 2025 (Confirmed)'},
+                                {value:58,label:'58% — Jul 2025 (Projected)'},
+                                {value:61,label:'61% — Jan 2026 (Projected)'},
+                                {value:65,label:'65%'},{value:70,label:'70%'},{value:75,label:'75%'},{value:80,label:'80%'},
+                              ]}/>
                           </div>
-                          <div className="text-[10px] font-bold text-gray-400 text-right shrink-0">{item.cap}</div>
+                          <div>
+                            <Lbl c="Earned Leaves at Retirement (Max 300)"/>
+                            <TIn type="number" value={emp.earnedLeaves}
+                              onChange={(v:string)=>setEmp((p:EmployeeData)=>({...p,earnedLeaves:Math.min(Number(v)||0,300)}))}/>
+                          </div>
+
+                          {/* Auto-calculated projected basic */}
+                          <div className="p-4 bg-white border-2 border-amber-400 rounded-xl">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Zap size={14} className="text-amber-600"/>
+                              <p className="text-[11px] font-black text-amber-700 uppercase">Projected Last Basic Pay</p>
+                            </div>
+                            <p className="text-3xl font-black text-amber-900">{rs(projBasic)}</p>
+                            <div className="mt-2 space-y-1 text-[10px] text-amber-700">
+                              <div className="flex justify-between"><span>Current Basic:</span><span className="font-bold">{rs(emp.basicPay7th)}</span></div>
+                              <div className="flex justify-between"><span>Increments Applied:</span><span className="font-bold">{yearsRemaining} annual</span></div>
+                              <div className="flex justify-between"><span>MACP Upgrades:</span>
+                                <span className="font-bold">{projTrail.filter(r=>r.isMacp).length} times
+                                  {projTrail.filter(r=>r.isMacp).length>0 && ` (Level ${emp.payLevel}→${projLevel})`}
+                                </span>
+                              </div>
+                              <div className="flex justify-between"><span>Retirement Year:</span><span className="font-bold">{retYear}</span></div>
+                              <div className="flex justify-between pt-1 border-t border-amber-200 font-black text-amber-900">
+                                <span>Basic + DA ({projDA}%):</span><span>{rs(projBasic+pct(projBasic,projDA))}</span>
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
 
-                  {/* ── INCREMENT TRAIL TABLE ── */}
-                  <div className="mb-6 bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-                    <div className="px-5 py-3 bg-amber-600 text-white flex items-center justify-between">
-                      <p className="text-sm font-black flex items-center gap-2">
-                        <Milestone size={15}/> Salary Progression to Retirement (Year-wise Increment Trail)
-                      </p>
-                      <span className="text-[11px] bg-amber-500 px-2 py-0.5 rounded-full font-bold">
-                        {rs(emp.basicPay7th)} → {rs(retBasic)} · Level {emp.payLevel}→{retLevel} · {yearsRemaining} yrs
-                      </span>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs border-collapse min-w-[760px]">
-                        <thead>
-                          <tr className="bg-amber-50 border-b-2 border-amber-200">
-                            {['Year','Service Yr','Level','Basic Pay','Increment','DA (@'+emp.daRate+'%)','HRA','Gross (Est.)','Status'].map(h=>(
-                              <th key={h} className="px-3 py-2.5 text-center font-black text-gray-600 text-[10px] uppercase tracking-wider whitespace-nowrap">{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {incrementTrail.map((row, idx) => {
-                            const daAmt  = pct(row.basic, emp.daRate);
-                            const hraAmt = pct(row.basic, HRA_RATES[emp.hraCategory]*100);
-                            const gross  = row.basic + daAmt + hraAmt + emp.transportAllowance + emp.medicalAllowance;
-                            const prev   = idx > 0 ? incrementTrail[idx-1] : null;
-                            const incAmt = prev ? row.basic - prev.basic : 0;
-                            const svcYr  = yearsServedSoFar + idx;
-                            return (
-                              <tr key={row.year}
-                                className={
-                                  row.isRetirement ? 'bg-amber-100 border-y-2 border-amber-500 font-black' :
-                                  row.isMacp       ? 'bg-purple-50 border border-purple-200' :
-                                  row.isCurrent    ? 'bg-green-50 border border-green-200' :
-                                  idx % 2 === 0    ? 'bg-white' : 'bg-gray-50/40'
-                                }>
-                                <td className="px-3 py-2 text-center font-bold"
-                                  style={{color: row.isRetirement ? '#d97706' : row.isMacp ? '#7c3aed' : row.isCurrent ? '#16a34a' : '#6b7280'}}>
-                                  {row.year}
-                                </td>
-                                <td className="px-3 py-2 text-center text-gray-400 font-mono text-[10px]">{svcYr} yr</td>
-                                <td className="px-3 py-2 text-center">
-                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded"
-                                    style={{background: row.isMacp ? '#f3e8ff' : '#eff6ff', color: row.isMacp ? '#7c3aed' : '#2563eb'}}>
-                                    L{row.level}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-2 text-right font-mono font-bold">{rs(row.basic)}</td>
-                                <td className="px-3 py-2 text-center">
-                                  {row.isMacp
-                                    ? <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">⬆ {row.macpNote}</span>
-                                    : incAmt > 0
-                                      ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-700">+{rs(incAmt)}</span>
-                                      : <span className="text-gray-300 text-[10px]">—</span>}
-                                </td>
-                                <td className="px-3 py-2 text-right font-mono text-purple-600">{rs(daAmt)}</td>
-                                <td className="px-3 py-2 text-right font-mono text-blue-600">{rs(hraAmt)}</td>
-                                <td className="px-3 py-2 text-right font-mono text-green-700 font-bold">{rs(gross)}</td>
-                                <td className="px-3 py-2 text-center whitespace-nowrap">
-                                  {row.isRetirement
-                                    ? <span className="text-[10px] font-black px-2 py-1 rounded-full bg-amber-500 text-white">🎓 RETIRE</span>
-                                    : row.isMacp
-                                    ? <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-500 text-white">MACP</span>
-                                    : row.isCurrent
-                                    ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">← Now</span>
-                                    : <span className="text-[10px] text-gray-400">+{idx} yr</span>}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* ── NPS CORPUS ── */}
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                    <p className="text-[11px] font-black text-blue-700 uppercase tracking-widest mb-3">NPS Corpus at Retirement (Based on Projected Last Basic)</p>
-                    <div className="grid grid-cols-4 gap-4">
-                      {[6,8,10,12].map(rate=>{
-                        const monthly = npsMonthly;
-                        const r = rate/12/100, n = yearsRemaining*12;
-                        const corpus = n>0 ? monthly*(Math.pow(1+r,n)-1)/r*(1+r) : monthly*n;
-                        return (
-                          <div key={rate} className="bg-white rounded-xl p-3 text-center border border-blue-100">
-                            <p className="text-[10px] text-gray-400 mb-0.5">{rate}% p.a.</p>
-                            <p className="font-black text-blue-700">{rs(Math.round(corpus/1000)*1000)}</p>
-                            <p className="text-[9px] text-gray-400 mt-0.5">Lumpsum: {rs(Math.round(corpus*0.4/1000)*1000)}</p>
+                        {/* Right: Projected Benefits */}
+                        <div className="space-y-3">
+                          {[
+                            {t:'Projected Gratuity',       icon:Award,       col:'#d97706',
+                             val:projGratuity,
+                             note:`(${rs(projBasic)}+${rs(pct(projBasic,projDA))}) × 15/26 × ${Math.min(totalQualifyingYrs,33)} yrs`,
+                             cap:projGratuity>=2000000?'⚠ Capped at ₹20L':'Within ₹20L cap'},
+                            {t:'Projected Leave Encashment',icon:BookOpen,    col:'#16a34a',
+                             val:projLeaveEnc,
+                             note:`(Basic+DA) × ${emp.earnedLeaves} days / 30`,
+                             cap:'Max 300 days EL'},
+                            {t:'Monthly NPS (at Retirement)',icon:TrendingUp, col:'#7c3aed',
+                             val:projNPS,
+                             note:`24% of (${rs(projBasic)}+${rs(pct(projBasic,projDA))})`,
+                             cap:`Annual: ${rs(projNPS*12)}`},
+                          ].map(item=>(
+                            <div key={item.t} className="p-4 rounded-xl border-2 flex items-start gap-4"
+                              style={{background:item.col+'08',borderColor:item.col+'33'}}>
+                              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{background:item.col+'18'}}>
+                                <item.icon size={20} style={{color:item.col}}/>
+                              </div>
+                              <div className="flex-1">
+                                <p className="text-[10px] font-black uppercase tracking-wider" style={{color:item.col}}>{item.t}</p>
+                                <p className="text-xl font-black text-gray-900 mt-0.5">{rs(Math.round(item.val))}</p>
+                                <p className="text-[10px] text-gray-400 mt-0.5">{item.note}</p>
+                              </div>
+                              <span className="text-[10px] font-bold text-gray-400 shrink-0">{item.cap}</span>
+                            </div>
+                          ))}
+                          {/* NPS Corpus */}
+                          <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                            <p className="text-[10px] font-black text-blue-700 uppercase mb-2">NPS Corpus at Retirement ({retYear})</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              {[6,8,10,12].map(rate=>{
+                                const r=rate/12/100, n=yearsRemaining*12;
+                                const corpus = n>0 ? projNPS*(Math.pow(1+r,n)-1)/r*(1+r) : projNPS*n;
+                                return (
+                                  <div key={rate} className="bg-white rounded-lg p-2.5 border border-blue-100 text-center">
+                                    <p className="text-[9px] text-gray-400">{rate}% p.a.</p>
+                                    <p className="font-black text-blue-700 text-sm">{rs(Math.round(corpus/1000)*1000)}</p>
+                                    <p className="text-[9px] text-gray-400">Lumpsum 40%: {rs(Math.round(corpus*0.4/1000)*1000)}</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
-                        );
-                      })}
+                        </div>
+                      </div>
+
+                      {/* Salary Progression Trail */}
+                      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+                        <div className="px-5 py-3 bg-amber-600 text-white flex items-center justify-between">
+                          <p className="text-sm font-black flex items-center gap-2">
+                            <Milestone size={15}/> Year-wise Salary Progression to Retirement
+                          </p>
+                          <span className="text-[11px] bg-amber-500 px-2.5 py-1 rounded-full font-bold">
+                            {rs(emp.basicPay7th)} → {rs(projBasic)} · Level {emp.payLevel}→{projLevel} · {yearsRemaining} yrs
+                          </span>
+                        </div>
+                        <div className="overflow-x-auto max-h-[480px]">
+                          <table className="w-full text-xs border-collapse min-w-[800px]">
+                            <thead className="sticky top-0 z-10">
+                              <tr className="bg-amber-50 border-b-2 border-amber-200">
+                                {['Year','Service Yrs','Level','Basic Pay','Increment / Event','DA Amt','HRA','Est. Gross','Status'].map(h=>(
+                                  <th key={h} className="px-3 py-2.5 text-center font-black text-gray-600 text-[10px] uppercase tracking-wider whitespace-nowrap">{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {projTrail.map((row,idx)=>{
+                                const daA = pct(row.basic, projDA);
+                                const hrA = pct(row.basic, HRA_RATES[emp.hraCategory]*100);
+                                const gr  = row.basic+daA+hrA+emp.transportAllowance+emp.medicalAllowance;
+                                const prev= idx>0 ? projTrail[idx-1] : null;
+                                const inc = prev && !row.isMacp ? row.basic - prev.basic : 0;
+                                const svc = yearsServedSoFar + idx;
+                                return (
+                                  <tr key={row.year} className={
+                                    row.isRetirement ? 'bg-amber-100 border-y-2 border-amber-500 font-black' :
+                                    row.isMacp       ? 'bg-purple-50 border border-purple-200' :
+                                    row.isCurrent    ? 'bg-green-50 border border-green-200' :
+                                    idx%2===0        ? 'bg-white' : 'bg-gray-50/40'
+                                  }>
+                                    <td className="px-3 py-2 text-center font-bold whitespace-nowrap"
+                                      style={{color:row.isRetirement?'#d97706':row.isMacp?'#7c3aed':row.isCurrent?'#16a34a':'#6b7280'}}>
+                                      {row.year}
+                                    </td>
+                                    <td className="px-3 py-2 text-center text-gray-400 text-[10px]">{svc} yr</td>
+                                    <td className="px-3 py-2 text-center">
+                                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                        style={{background:row.isMacp?'#f3e8ff':'#eff6ff',color:row.isMacp?'#7c3aed':'#2563eb'}}>
+                                        L{row.level}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-2 text-right font-mono font-bold">{rs(row.basic)}</td>
+                                    <td className="px-3 py-2 text-center">
+                                      {row.isMacp
+                                        ? <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">⬆ {row.macpNote}</span>
+                                        : inc>0
+                                          ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-700">+{rs(inc)}</span>
+                                          : <span className="text-[10px] text-gray-300">—</span>}
+                                    </td>
+                                    <td className="px-3 py-2 text-right font-mono text-purple-600">{rs(daA)}</td>
+                                    <td className="px-3 py-2 text-right font-mono text-blue-600">{rs(hrA)}</td>
+                                    <td className="px-3 py-2 text-right font-mono text-green-700 font-bold">{rs(gr)}</td>
+                                    <td className="px-3 py-2 text-center whitespace-nowrap">
+                                      {row.isRetirement
+                                        ? <span className="text-[10px] font-black px-2 py-1 rounded-full bg-amber-500 text-white">🎓 RETIRE</span>
+                                        : row.isMacp
+                                        ? <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-500 text-white">MACP</span>
+                                        : row.isCurrent
+                                        ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">← Now</span>
+                                        : <span className="text-[10px] text-gray-400">+{idx} yr</span>}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-[9px] text-blue-400 mt-2">Based on {rs(npsMonthly)}/mo NPS contribution at retirement basic · Over {yearsRemaining} years remaining</p>
-                  </div>
+                  )}
+
+                  {/* ════ TAB 2: ACTUAL RETIREMENT NOW ════ */}
+                  {retirementTab==='actual'&&(
+                    <div className="space-y-6">
+                      {/* Header notice */}
+                      <div className="p-4 bg-green-50 border border-green-300 rounded-xl flex items-start gap-3">
+                        <CheckCircle2 size={18} className="text-green-600 shrink-0 mt-0.5"/>
+                        <div>
+                          <p className="font-black text-green-800 text-sm">Actual Retirement Calculation</p>
+                          <p className="text-xs text-green-700 mt-0.5">
+                            Using <strong>current basic pay</strong> ({rs(actualLastBasic)}) as the last drawn salary.
+                            All figures are final/payable amounts based on data entered in Profile.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Left: Actual Parameters */}
+                        <div className="p-5 bg-gray-50 border border-gray-200 rounded-2xl space-y-4">
+                          <h3 className="font-black text-sm text-gray-700 flex items-center gap-2 pb-2 border-b">
+                            <Settings size={14}/> Retirement Parameters (Edit if Needed)
+                          </h3>
+
+                          <div>
+                            <Lbl c="Last Drawn Basic Pay (₹)"/>
+                            <TIn type="number" value={emp.basicPay7th}
+                              onChange={(v:string)=>setEmp((p:EmployeeData)=>({...p,basicPay7th:Number(v)||0}))}/>
+                            <p className="text-[9px] text-gray-400 mt-1">Level {emp.payLevel} — auto from Profile</p>
+                          </div>
+
+                          <div>
+                            <Lbl c="DA Rate at Retirement (%)"/>
+                            <TSel value={emp.daRate} onChange={(v:string)=>setEmp((p:EmployeeData)=>({...p,daRate:Number(v)}))}
+                              options={[
+                                {value:55,label:'55% (Jan 2025 — Confirmed)'},
+                                {value:58,label:'58% (Jul 2025 — Projected)'},
+                                {value:61,label:'61% (Jan 2026 — Projected)'},
+                                {value:53,label:'53% (Jul 2024)'},{value:50,label:'50% (Jan 2024)'},
+                              ]}/>
+                          </div>
+
+                          <div>
+                            <Lbl c="Qualifying Service Years"/>
+                            <TIn type="number" value={emp.serviceYears}
+                              onChange={(v:string)=>setEmp((p:EmployeeData)=>({...p,serviceYears:Math.min(Number(v)||0,42)}))}/>
+                            <p className="text-[9px] text-gray-400 mt-1">
+                              Auto-calc from DOJ: {totalQualifyingYrs} yrs — override if different
+                            </p>
+                          </div>
+
+                          <div>
+                            <Lbl c="Earned Leave Balance (days, Max 300)"/>
+                            <TIn type="number" value={emp.earnedLeaves}
+                              onChange={(v:string)=>setEmp((p:EmployeeData)=>({...p,earnedLeaves:Math.min(Number(v)||0,300)}))}/>
+                          </div>
+
+                          {/* Final summary box */}
+                          <div className="p-4 bg-white border-2 border-gray-300 rounded-xl">
+                            <p className="text-[10px] font-black text-gray-600 uppercase mb-2">Summary</p>
+                            <div className="space-y-1.5 text-[11px]">
+                              {[
+                                ['Last Basic Pay',rs(actualLastBasic),'font-black text-gray-900'],
+                                ['DA ('+actualDA+'%)',rs(pct(actualLastBasic,actualDA)),'text-purple-700'],
+                                ['Basic + DA',rs(actualLastBasic+pct(actualLastBasic,actualDA)),'font-black text-gray-900'],
+                                ['Qualifying Service',`${emp.serviceYears} yrs`,'text-blue-700'],
+                                ['Earned Leaves',`${emp.earnedLeaves} days`,'text-green-700'],
+                              ].map(([l,v,cls])=>(
+                                <div key={l as string} className="flex justify-between">
+                                  <span className="text-gray-500">{l}</span>
+                                  <span className={cls as string}>{v}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right: Actual Benefit Calculations */}
+                        <div className="space-y-4">
+                          {[
+                            {
+                              t:'Death-cum-Retirement Gratuity',
+                              icon:Award, col:'#d97706',
+                              val: actualGratuity,
+                              formula:`(${rs(actualLastBasic)} + ${rs(pct(actualLastBasic,actualDA))}) × 15/26 × ${Math.min(emp.serviceYears,33)} yrs`,
+                              detail: actualGratuity>=2000000
+                                ? `⚠ Capped at ₹20,00,000 (actual computed: ${rs(((actualLastBasic+pct(actualLastBasic,actualDA))*15*Math.min(emp.serviceYears,33))/26)})`
+                                : `${Math.min(emp.serviceYears,33)} qualifying years × (Basic+DA) × 15/26`,
+                              cap: '₹20,00,000',
+                            },
+                            {
+                              t:'Leave Encashment (EL)',
+                              icon:BookOpen, col:'#16a34a',
+                              val: actualLeaveEnc,
+                              formula:`(${rs(actualLastBasic)} + ${rs(pct(actualLastBasic,actualDA))}) × ${emp.earnedLeaves} / 30`,
+                              detail:`${emp.earnedLeaves} days × (Basic+DA)/30 — Max 300 days`,
+                              cap: '300 days max',
+                            },
+                            {
+                              t:'Total Retirement Benefits',
+                              icon:IndianRupee, col:'#059669',
+                              val: actualGratuity + actualLeaveEnc,
+                              formula:`Gratuity + Leave Encashment`,
+                              detail:`${rs(actualGratuity)} + ${rs(Math.round(actualLeaveEnc))}`,
+                              cap: 'Combined payout',
+                            },
+                          ].map(item=>(
+                            <div key={item.t} className="p-5 rounded-2xl border-2"
+                              style={{background:item.col+'06',borderColor:item.col+'44'}}>
+                              <div className="flex items-start gap-3">
+                                <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0" style={{background:item.col+'18'}}>
+                                  <item.icon size={22} style={{color:item.col}}/>
+                                </div>
+                                <div className="flex-1">
+                                  <p className="text-[10px] font-black uppercase tracking-wider" style={{color:item.col}}>{item.t}</p>
+                                  <p className="text-3xl font-black text-gray-900 mt-1">{rs(Math.round(item.val))}</p>
+                                  <div className="mt-2 p-2 bg-white/80 rounded-lg border" style={{borderColor:item.col+'22'}}>
+                                    <p className="text-[10px] font-mono text-gray-600">{item.formula}</p>
+                                    <p className="text-[9px] text-gray-400 mt-0.5">{item.detail}</p>
+                                  </div>
+                                </div>
+                                <div className="text-[10px] font-bold text-gray-400 shrink-0 text-right">
+                                  Max<br/>{item.cap}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+
+                          {/* NPS Corpus (accumulated so far) */}
+                          <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                            <p className="text-[10px] font-black text-blue-700 uppercase mb-2">Monthly NPS at Retirement</p>
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="text-sm text-blue-600">Employee 10% + Govt 14%</span>
+                              <span className="text-lg font-black text-blue-800">{rs(actualNPS)}/month</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              {[
+                                ['Annual NPS',rs(actualNPS*12)],
+                                ['NPS Annuity (est.)',rs(Math.round(actualNPS*12*yearsServedSoFar*0.4/20/12))+'/mo'],
+                              ].map(([l,v])=>(
+                                <div key={l as string} className="bg-white rounded-lg p-2 text-center border border-blue-100">
+                                  <p className="text-[9px] text-gray-400">{l}</p>
+                                  <p className="font-black text-blue-700 text-sm">{v}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Retirement Checklist */}
+                      <div className="p-5 bg-white border border-gray-200 rounded-2xl">
+                        <p className="text-xs font-black text-gray-500 uppercase tracking-wider mb-4">
+                          📋 Retirement Documents Checklist
+                        </p>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {[
+                            'Last Pay Certificate (LPC)','No Objection Certificate (NOC)',
+                            'Service Book (All entries verified)','NPS PRAN Account closure/withdrawal form',
+                            'Gratuity claim form (Form F)','Leave Encashment application',
+                            'PAN Card & Aadhaar','Bank passbook (for NEFT payment)',
+                            'Retirement order copy','Department clearance certificate',
+                            'Income Tax Returns (last 3 years)','Medical fitness certificate',
+                          ].map((item,i)=>(
+                            <div key={i} className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg border border-gray-200 text-xs">
+                              <div className="w-4 h-4 rounded border-2 border-gray-300 shrink-0"/>
+                              <span className="text-gray-700">{item}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <NavRow onPrev={goPrev} onNext={goNext}/>
                 </div>
@@ -2474,7 +2676,7 @@ export default function App() {
                       const scores=[
                         {label:'NPS Coverage',score:emp.applyNPS?100:0,max:100,note:emp.applyNPS?'NPS active (10%+14%)':'NPS not applied'},
                         {label:'Tax Planning',score:emp.taxRegime==='old'&&(emp.annualPPF+emp.annualLIC+emp.mediclaim)>50000?90:emp.applyIT?70:40,max:100,note:emp.taxRegime==='old'?`Deductions: ${rs(emp.annualPPF+emp.annualLIC+emp.mediclaim)}`:'Tax auto-TDS applied'},
-                        {label:'Profile Completeness',score:Math.round(([emp.name,emp.panNumber,emp.pranNumber,emp.bankAccount,emp.ifscCode,emp.dateOfJoining].filter(Boolean).length/6)*100),max:100,note:'Name, PAN, PRAN, Bank, IFSC, DOJ'},
+                        {label:'Profile Completeness',score:Math.round(([emp.name,emp.panNumber,emp.pranNumber,emp.bankAccount,emp.ifscCode,emp.dateOfJoining,emp.dateOfBirth].filter(Boolean).length/7)*100),max:100,note:'Name, PAN, PRAN, Bank, IFSC, DOJ, DOB'},
                         {label:'Insurance Coverage',score:emp.applyLIC&&emp.licDeduction>0?100:emp.mediclaim>0?60:20,max:100,note:emp.applyLIC?`LIC: ${rs(emp.licDeduction*12)}/yr`:'No LIC/insurance entered'},
                         {label:'Home Loan Deduction',score:emp.homeLoanInterest>0&&emp.homeLoanPrincipal>0?100:emp.homeLoanInterest>0?50:0,max:100,note:emp.homeLoanInterest>0?`Interest: ${rs(emp.homeLoanInterest)}/yr`:'No home loan'},
                       ];
