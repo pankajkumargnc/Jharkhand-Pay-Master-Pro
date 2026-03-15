@@ -208,9 +208,9 @@ const BLANK_PROFILE = (id: string, overrides: Partial<EmployeeData> = {}): Emplo
 // ══════════════════════════════════════════════════════════════════
 const uid = () => Math.random().toString(36).slice(2,10);
 
-// Resolves logo: static path first, base64 fallback
-const logoSrc = (cfg: {logoPath?:string; logoBase64?:string}) =>
-  cfg.logoPath || cfg.logoBase64 || '';
+// PERMANENT LOGO — reads from /public/logo.png
+// Vite serves public/ folder at root. BASE_URL handles subdirectory deploys.
+const logoSrc = (_cfg?: any) => `${(import.meta as any).env.BASE_URL}logo.png`;
 const rnd = (n:number) => Math.round(n);
 const fmt = (n:number) => Math.round(n).toLocaleString('en-IN');
 const rs  = (n:number) => `₹${fmt(n)}`;
@@ -309,7 +309,7 @@ const downloadPDF = async (
 
   try {
     const canvas = await html2canvas(clone, {
-      scale: 2,
+      scale: 3,           // Higher = sharper text (3x = very crisp)
       useCORS: true,
       allowTaint: true,
       backgroundColor: '#ffffff',
@@ -325,7 +325,7 @@ const downloadPDF = async (
 
     document.body.removeChild(clone);
 
-    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const imgData = canvas.toDataURL('image/png');  // PNG = lossless, no blur
     const pdf = new jsPDF({ orientation: orient, unit: 'mm', format: 'a4', compress: true });
     const margin = 10;
     const pdfW  = pdf.internal.pageSize.getWidth()  - margin * 2;
@@ -337,13 +337,13 @@ const downloadPDF = async (
     const scaledH = Math.min(contentH, pdfH);
     if (contentH <= pdfH) {
       // Fits in one page
-      pdf.addImage(imgData, 'JPEG', margin, margin, pdfW, contentH);
+      pdf.addImage(imgData, 'PNG', margin, margin, pdfW, contentH);
     } else {
       // Scale down to fit single page if content is only slightly larger
       const ratio2 = pdfH / contentH;
       if (ratio2 > 0.75) {
         // Only slightly larger — fit to one page by scaling
-        pdf.addImage(imgData, 'JPEG', margin, margin, pdfW * ratio2, pdfH);
+        pdf.addImage(imgData, 'PNG', margin, margin, pdfW * ratio2, pdfH);
       } else {
         // Genuinely multi-page — slice properly
         const pagePixH = Math.floor((pdfH / contentH) * canvas.height);
@@ -358,9 +358,9 @@ const downloadPDF = async (
           sliceC.height = srcH;
           const ctx = sliceC.getContext('2d')!;
           ctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
-          const sliceImg = sliceC.toDataURL('image/jpeg', 0.95);
+          const sliceImg = sliceC.toDataURL('image/png');
           const sliceH = (srcH / canvas.width) * pdfW;
-          pdf.addImage(sliceImg, 'JPEG', margin, margin, pdfW, sliceH);
+          pdf.addImage(sliceImg, 'PNG', margin, margin, pdfW, sliceH);
         }
       }
     }
@@ -507,6 +507,26 @@ const NavRow = ({onPrev,onNext,showNext=true,extras}:{onPrev?:()=>void,onNext?:(
     <div className="flex items-center gap-3">{extras}{showNext&&<button onClick={onNext} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-all shadow-md">Next <ChevronRight size={15}/></button>}</div>
   </div>
 );
+
+// ── Logo header component — handles load/error gracefully ──────
+function LogoHeader() {
+  const [ok, setOk] = useState(true);
+  const src = `${(import.meta as any).env.BASE_URL}logo.png`;
+  if (!ok) return (
+    <div className="h-10 w-10 bg-gradient-to-br from-green-600 to-green-700 rounded-lg flex items-center justify-center shadow shrink-0">
+      <Calculator size={16} className="text-white"/>
+    </div>
+  );
+  return (
+    <img
+      src={src}
+      alt="Logo"
+      className="h-10 w-10 object-contain rounded-lg bg-white p-0.5 border border-gray-100 shadow-sm shrink-0"
+      style={{mixBlendMode:'multiply'}}
+      onError={() => setOk(false)}
+    />
+  );
+}
 
 const Badge = ({text,color}:{text:string,color:string}) => (
   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{background:color+'18',color}}>{text}</span>
@@ -1130,7 +1150,7 @@ export default function App() {
           {/* ── WATERMARK ── */}
           {logoSrc(sysConfig) && (
             <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',opacity:0.045,pointerEvents:'none',zIndex:0}}>
-              <img src={logoSrc(sysConfig)} alt="" style={{width:'500px',height:'auto'}}/>
+              <img src={logoSrc(sysConfig)} alt="" style={{width:"500px",height:"auto"}} onError={e=>{(e.target as HTMLImageElement).style.display="none"}}/>
             </div>
           )}
 
@@ -1140,7 +1160,7 @@ export default function App() {
               {/* Logo */}
               <div style={{flexShrink:0,width:'72px',height:'72px'}}>
                 {logoSrc(sysConfig)
-                  ? <img src={logoSrc(sysConfig)} alt="Logo" style={{width:'72px',height:'72px',objectFit:'contain'}}/>
+                  ? <img src={logoSrc(sysConfig)} alt="Logo" style={{width:"72px",height:"72px",objectFit:"contain",mixBlendMode:"multiply"}} onError={e=>{(e.target as HTMLImageElement).style.display="none"}}/>
                   : <div style={{width:'72px',height:'72px',background:'#e2e8f0',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px'}}>🏛️</div>
                 }
               </div>
@@ -1352,11 +1372,15 @@ export default function App() {
       {/* HEADER */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-gray-200 shadow-sm">
         <div className="max-w-screen-2xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-gradient-to-br from-green-600 to-green-700 rounded-lg flex items-center justify-center shadow"><Calculator size={15} className="text-white"/></div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-xs sm:text-sm font-black text-gray-900 tracking-tight truncate max-w-[120px] sm:max-w-none">{sysConfig.collegeName||'Pay Master Pro'}</span>
-              <span className="hidden sm:inline text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full">v8.0</span>
+          <div className="flex items-center gap-2.5">
+            {/* Logo from /public/logo.png — tracked with state */}
+            <LogoHeader/>
+            <div className="flex flex-col leading-tight">
+              <span className="text-xs sm:text-sm font-black text-gray-900 tracking-tight truncate max-w-[140px] sm:max-w-xs">{sysConfig.collegeName||'Pay Master Pro'}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="hidden sm:inline text-[9px] text-gray-400 font-medium truncate max-w-[160px]">{sysConfig.address?.split(',').slice(0,2).join(',')}</span>
+                <span className="text-[9px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full">v8.0</span>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1997,7 +2021,7 @@ export default function App() {
                       <div style={{position:'absolute',top:'-30px',right:'-30px',width:'120px',height:'120px',background:'rgba(255,255,255,0.04)',borderRadius:'50%'}}/>
                       <div style={{position:'absolute',bottom:'-20px',left:'40%',width:'80px',height:'80px',background:'rgba(255,255,255,0.03)',borderRadius:'50%'}}/>
                       <div style={{display:'flex',alignItems:'center',gap:'18px',position:'relative',zIndex:1}}>
-                        {logoSrc(sysConfig)&&<img src={logoSrc(sysConfig)} alt="" style={{height:'40px',width:'40px',objectFit:'contain',background:'rgba(255,255,255,0.12)',borderRadius:'6px',padding:'3px'}}/>}
+                        {<img src={logoSrc(sysConfig)} alt="" style={{height:"40px",width:"40px",objectFit:"contain",background:"#fff",borderRadius:"6px",padding:"3px",mixBlendMode:"multiply"}} onError={e=>{(e.target as HTMLImageElement).style.display="none"}}/>}
                         <div style={{flex:1}}>
                           <div style={{fontSize:'14px',fontWeight:'900',color:'#fff',textTransform:'uppercase',letterSpacing:'1.5px'}}>{sysConfig.collegeName}</div>
                           <div style={{fontSize:'11px',color:'rgba(255,255,255,0.75)',marginTop:'3px'}}>{sysConfig.address}</div>
@@ -2334,7 +2358,7 @@ export default function App() {
                   {/* Printable Bill */}
                   <div ref={billRef} style={{background:'#fff',color:'#000',fontFamily:'Arial,sans-serif',padding:'12px'}}>
                     <div style={{textAlign:'center',borderBottom:'2px solid #000',paddingBottom:'7px',marginBottom:'8px'}}>
-                      {logoSrc(sysConfig)&&<img src={logoSrc(sysConfig)} alt="Logo" style={{height:'35px',objectFit:'contain',marginBottom:'3px'}}/>}
+                      {<img src={logoSrc(sysConfig)} alt="Logo" style={{height:"35px",objectFit:"contain",marginBottom:"3px",mixBlendMode:"multiply"}} onError={e=>{(e.target as HTMLImageElement).style.display="none"}}/>}
                       <div style={{fontSize:'14px',fontWeight:'900',textTransform:'uppercase',letterSpacing:'1px'}}>{sysConfig.collegeName}, DHANBAD</div>
                       <div style={{fontSize:'11px',fontWeight:'bold',marginTop:'3px'}}>SALARY BILL OF THE NON-TEACHING STAFF FOR THE MONTH OF {sbCfg.month.toUpperCase()} {sbCfg.year} (As per 7<sup>th</sup> pay scale)</div>
                     </div>
@@ -3382,18 +3406,16 @@ export default function App() {
                         <h3 className="text-xs font-black text-slate-500 uppercase tracking-wider mb-4">Official Logo Upload</h3>
                         <div className="flex items-center gap-4">
                           <div className="w-20 h-20 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center bg-white overflow-hidden shrink-0">
-                            {logoSrc(sysConfig)?<img src={logoSrc(sysConfig)} alt="Logo" className="w-full h-full object-contain p-1"/>:<Building2 size={24} className="text-slate-300"/>}
+                            <img src={logoSrc(sysConfig)} alt="Logo" className="w-full h-full object-contain p-1" style={{mixBlendMode:"multiply"}} onError={e=>{(e.target as HTMLImageElement).style.display="none"}}/>
                           </div>
                           <div>
                             <input type="file" accept="image/png,image/jpeg" id="logo-upload" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=ev=>setSysConfig(p=>({...p,logoBase64:ev.target?.result as string,logoPath:''}));r.readAsDataURL(f);}}}/>
                             <label htmlFor="logo-upload" className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-xl cursor-pointer hover:bg-slate-700 shadow mb-2"><Upload size={13}/> Upload (temp)</label>
-                            <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800">
-                              <p className="font-black mb-1">✅ Permanent Logo (Recommended)</p>
-                              <p className="text-blue-600">Logo file ko <code className="bg-blue-100 px-1 rounded">public/logo.png</code> mein save karo</p>
-                              <p className="text-blue-600 mt-0.5">Automatic load hoga — koi upload nahi chahiye</p>
-                              <button onClick={()=>setSysConfig(p=>({...p,logoPath:'/logo.png',logoBase64:''}))} className="mt-2 flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700">
-                                ✅ Use /public/logo.png
-                              </button>
+                            <div className="mt-2 p-3 bg-green-50 border border-green-300 rounded-xl text-xs text-green-800">
+                              <p className="font-black mb-1">📁 Permanent Logo Setup</p>
+                              <p className="mb-1">File save karo yahan:</p>
+                              <code className="block bg-white border border-green-200 rounded px-2 py-1 font-mono text-xs text-green-900 mb-2">public/logo.png</code>
+                              <p className="text-green-700">Save karo → Ctrl+Shift+R karo → Logo har jagah aayega</p>
                             </div>
                             {logoSrc(sysConfig)&&<button onClick={()=>setSysConfig(p=>({...p,logoBase64:'',logoPath:''}))} className="block text-[10px] font-bold text-red-500 hover:text-red-700 mt-1">Remove Logo</button>}
                           </div>
@@ -3410,7 +3432,7 @@ export default function App() {
                     <div className="sticky top-24 p-6 bg-white border-2 border-slate-200 rounded-2xl shadow-lg">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-5 text-center">Live Document Header Preview</p>
                       <div className="border-b-2 border-double border-black pb-4 text-center flex flex-col items-center">
-                        {logoSrc(sysConfig)&&<img src={logoSrc(sysConfig)} alt="Logo" className="h-16 mb-3 object-contain"/>}
+                        {<img src={logoSrc(sysConfig)} alt="Logo" className="h-16 mb-3 object-contain" style={{mixBlendMode:"multiply"}} onError={e=>{(e.target as HTMLImageElement).style.display="none"}}/>}
                         <h1 className="text-lg font-black uppercase tracking-wider text-black">{sysConfig.collegeName}</h1>
                         <p className="text-xs font-bold text-gray-700 mt-1">{sysConfig.address}</p>
                         {sysConfig.affiliatedTo&&<p className="text-[10px] font-medium text-gray-500 mt-0.5">Affiliated to {sysConfig.affiliatedTo}</p>}
