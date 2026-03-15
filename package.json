@@ -16,6 +16,7 @@
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "clsx": "^2.1.1",
+    "firebase": "^10.12.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.0",
     "lucide-react": "^0.546.0",
@@ -24,18 +25,18 @@
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.5.0",
     "vite": "^6.2.0",
-    "xlsx": "^0.18.5",
-    "firebase": "^10.12.0"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
+    "gh-pages": "^6.3.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   },
-  "description": "Ultra Premium Salary Calculator for Jharkhand Government University & College Non-Teaching Staff \u2014 7th & 8th Pay Commission",
+  "description": "Ultra Premium Salary Calculator for Jharkhand Government University & College Non-Teaching Staff — 7th & 8th Pay Commission",
   "author": "Pay Master Pro",
   "license": "MIT",
   "homepage": "https://github.com/your-username/jharkhand-pay-master-pro",
