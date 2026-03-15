@@ -17,6 +17,10 @@
  * ╚══════════════════════════════════════════════════════════════════════════╝
  */
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
+import { auth } from './firebase';
+import { useProfiles, useSysConfig } from './useFirestore';
+import LoginPage from './LoginPage';
 import {
   Calculator, User, FileText, TrendingUp, History, Printer, Download,
   Plus, Trash2, ChevronRight, ChevronLeft, IndianRupee, BarChart3,
@@ -203,6 +207,10 @@ const BLANK_PROFILE = (id: string, overrides: Partial<EmployeeData> = {}): Emplo
 // UTILITIES
 // ══════════════════════════════════════════════════════════════════
 const uid = () => Math.random().toString(36).slice(2,10);
+
+// Resolves logo: static path first, base64 fallback
+const logoSrc = (cfg: {logoPath?:string; logoBase64?:string}) =>
+  cfg.logoPath || cfg.logoBase64 || '';
 const rnd = (n:number) => Math.round(n);
 const fmt = (n:number) => Math.round(n).toLocaleString('en-IN');
 const rs  = (n:number) => `₹${fmt(n)}`;
@@ -265,7 +273,6 @@ function getFYMonths(fy:string) {
 
 // ── PDF EXPORT — High Quality with print-optimized rendering ────
 // Note: @react-pdf/renderer would give vector-quality PDF.
-// This implementation uses maximum html2canvas quality settings.
 const downloadPDF = async (
   ref: React.RefObject<HTMLDivElement|null>,
   filename: string,
@@ -273,78 +280,111 @@ const downloadPDF = async (
 ) => {
   if(!ref.current) return;
   const el = ref.current;
-  const origStyle = el.getAttribute('style') || '';
 
-  // ── Pre-render: force crisp layout ──────────────────────────────
-  el.style.cssText = `
-    background:#fff !important;
-    color:#000 !important;
-    font-family: Arial, 'Helvetica Neue', sans-serif !important;
-    width:${orient==='p'?'210mm':'297mm'} !important;
-    padding: 8mm !important;
-    box-sizing: border-box !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  `;
+  // Clone element so original is never modified (fixes focus/style issues)
+  const clone = el.cloneNode(true) as HTMLElement;
+  const pxW = orient==='p' ? 794 : 1123;
+  // Must be visible (not hidden) for html2canvas to render correctly
+  // We position it far off-screen so user doesn't see it
+  clone.style.cssText = [
+    'position:fixed',
+    'top:0',
+    'left:-9999px',   // off-screen but NOT hidden
+    'z-index:9999',
+    'background:#fff',
+    'color:#000',
+    'font-family:Arial,sans-serif',
+    `width:${pxW}px`,
+    'padding:24px',
+    'box-sizing:border-box',
+    '-webkit-print-color-adjust:exact',
+    'print-color-adjust:exact',
+    'overflow:visible',
+  ].join(';');
+  document.body.appendChild(clone);
+
+  // Wait for layout + images to render
+  await new Promise(r => setTimeout(r, 300));
+  const elH = clone.scrollHeight;
 
   try {
-    // Scale 4 = very sharp; imageTimeout 0 = no timeout for images
-    const canvas = await html2canvas(el, {
-      scale: 4,
+    const canvas = await html2canvas(clone, {
+      scale: 2,
       useCORS: true,
       allowTaint: true,
       backgroundColor: '#ffffff',
       logging: false,
-      imageTimeout: 0,
-      removeContainer: true,
-      // Fixes blurry text
-      windowWidth: orient==='p' ? 794 : 1123,
-      windowHeight: 1123,
+      imageTimeout: 15000,
+      scrollX: 0,
+      scrollY: 0,
+      x: 0,
+      y: 0,
+      width: pxW,
+      height: elH,
     });
 
-    const imgData = canvas.toDataURL('image/jpeg', 0.98);
-    const pdf = new jsPDF({ orientation: orient, unit: 'mm', format: 'a4' });
-    const margin = 8;
-    const pdfW = pdf.internal.pageSize.getWidth()  - margin * 2;
-    const pdfH = pdf.internal.pageSize.getHeight() - margin * 2;
+    document.body.removeChild(clone);
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const pdf = new jsPDF({ orientation: orient, unit: 'mm', format: 'a4', compress: true });
+    const margin = 10;
+    const pdfW  = pdf.internal.pageSize.getWidth()  - margin * 2;
+    const pdfH  = pdf.internal.pageSize.getHeight() - margin * 2;
     const ratio = canvas.height / canvas.width;
     const contentH = pdfW * ratio;
 
+    // Scale content to fit exactly in PDF — never overflow to next page
+    const scaledH = Math.min(contentH, pdfH);
     if (contentH <= pdfH) {
-      // Single page
+      // Fits in one page
       pdf.addImage(imgData, 'JPEG', margin, margin, pdfW, contentH);
     } else {
-      // Multi-page: slice canvas into page-height chunks
-      const pages = Math.ceil(contentH / pdfH);
-      for (let page = 0; page < pages; page++) {
-        if (page > 0) pdf.addPage();
-        // Clip the canvas section for this page
-        const sliceCanvas = document.createElement('canvas');
-        const sliceH = Math.ceil((pdfH / contentH) * canvas.height);
-        sliceCanvas.width = canvas.width;
-        sliceCanvas.height = Math.min(sliceH, canvas.height - page * sliceH);
-        const ctx = sliceCanvas.getContext('2d')!;
-        ctx.drawImage(canvas, 0, -page * sliceH);
-        const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.98);
-        const sliceContentH = (sliceCanvas.height / canvas.width) * pdfW;
-        pdf.addImage(sliceData, 'JPEG', margin, margin, pdfW, sliceContentH);
+      // Scale down to fit single page if content is only slightly larger
+      const ratio2 = pdfH / contentH;
+      if (ratio2 > 0.75) {
+        // Only slightly larger — fit to one page by scaling
+        pdf.addImage(imgData, 'JPEG', margin, margin, pdfW * ratio2, pdfH);
+      } else {
+        // Genuinely multi-page — slice properly
+        const pagePixH = Math.floor((pdfH / contentH) * canvas.height);
+        const totalPages = Math.ceil(canvas.height / pagePixH);
+        for (let pg = 0; pg < totalPages; pg++) {
+          if (pg > 0) pdf.addPage();
+          const srcY = pg * pagePixH;
+          const srcH = Math.min(pagePixH, canvas.height - srcY);
+          if (srcH < 10) break; // skip near-empty last slice
+          const sliceC = document.createElement('canvas');
+          sliceC.width = canvas.width;
+          sliceC.height = srcH;
+          const ctx = sliceC.getContext('2d')!;
+          ctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
+          const sliceImg = sliceC.toDataURL('image/jpeg', 0.95);
+          const sliceH = (srcH / canvas.width) * pdfW;
+          pdf.addImage(sliceImg, 'JPEG', margin, margin, pdfW, sliceH);
+        }
       }
     }
 
-    // Metadata
     pdf.setProperties({
       title: filename,
-      subject: 'Jharkhand Government Employee Salary Document',
-      creator: 'Pay Master Pro v8.0',
-      keywords: 'salary, 7th pay, jharkhand',
+      subject: 'Jharkhand Pay Master Pro',
+      creator: 'Pay Master Pro v8.0 — Pankaj Kumar Prasad',
     });
-
     pdf.save(`${filename}.pdf`);
-  } catch (err) {
+
+  } catch (err: any) {
+    if(document.body.contains(clone)) document.body.removeChild(clone);
     console.error('PDF Error:', err);
-    alert('PDF generation failed. Please try again or use browser Print (Ctrl+P → Save as PDF).');
-  } finally {
-    el.setAttribute('style', origStyle);
+    // Fallback: open print dialog
+    const win = window.open('', '_blank');
+    if(win) {
+      win.document.write(`<html><head><title>${filename}</title>
+        <style>body{margin:0;padding:24px;font-family:Arial,sans-serif}@media print{body{padding:0}}</style>
+        </head><body>${el.outerHTML}</body></html>`);
+      win.document.close();
+      win.focus();
+      setTimeout(()=>win.print(), 500);
+    }
   }
 };
 
@@ -515,75 +555,37 @@ export default function App() {
     setTimeout(()=>setToast(null),3000);
   },[]);
 
-  const [sysConfig, setSysConfig] = useState(()=>{
-    try{ return JSON.parse(localStorage.getItem('gnc_sys_v8')||'null')||{collegeName:'GURU NANAK COLLEGE',address:'Bhuda, Dhanbad, Jharkhand - 826001',affiliatedTo:'Binod Bihari Mahto Koylanchal University',logoBase64:''}; }
-    catch(e){ return {collegeName:'GURU NANAK COLLEGE',address:'Bhuda, Dhanbad, Jharkhand - 826001',affiliatedTo:'',logoBase64:''}; }
-  });
-  useEffect(()=>{ localStorage.setItem('gnc_sys_v8',JSON.stringify(sysConfig)); },[sysConfig]);
+  // ── Firebase Auth state ──────────────────────────────────────────
+  const [user, setUser] = useState<FirebaseUser|null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  useEffect(()=>{
+    const unsub = onAuthStateChanged(auth, u => { setUser(u); setAuthLoading(false); });
+    return () => unsub();
+  },[]);
 
-  // Multi-profile state
-  const [profiles, setProfiles] = useState<EmployeeData[]>(()=>{
-    try{ const s=localStorage.getItem('gnc_profiles_v8'); if(s) return JSON.parse(s); } catch(e){}
-    return [BLANK_PROFILE(uid(),{
-      name:'Demo Employee',
-      salutation:'Sri.',
-      designation:'Lower Division Clerk',
-      department:'Office',
-      college:'Your College Name',
-      panNumber:'',
-      pranNumber:'',
-      bankAccount:'',
-      ifscCode:'',
-      dateOfJoining:'',
-      dateOfBirth:'',
-      payLevel:2,
-      basicPay7th:19900,
-      daRate:55,
-      hraCategory:'Y',
-      medicalAllowance:1000,
-      transportAllowance:1800,
-      washingAllowance:0,
-      ceaChildren:0,
-      hostelChildren:0,
-      bandPayOld:5200,
-      gradePayOld:1900,
-      applyNPS:true,
-      npsEmployee:10,
-      npsEmployer:14,
-      applyGSLI:true,
-      gsliContribution:60,
-      applyPT:false,
-      professionalTax:0,
-      applyLIC:false,
-      licDeduction:0,
-      annualLIC:0,
-      annualPPF:0,
-      homeLoanPrincipal:0,
-      homeLoanInterest:0,
-      mediclaim:0,
-      npsVoluntary:0,
-      applyIT:false,
-      taxRegime:'new',
-      applySociety:false,
-      societyDeduction:0,
-      additionalIncome1Label:'Other Income',
-      additionalIncome1:0,
-      additionalIncome2Label:'Arrear Income',
-      additionalIncome2:0,
-      incrementMonth:'07',
-      financialYear:'2024-25',
-      fitmentFactor8th:1.92,
-      salaryMonth:'March',
-      salaryYear:'2026',
-      serviceYears:33,
-      earnedLeaves:0,
-      category:'non-teaching',
-      isStarred:false,
-      color:'#2563eb',
-      notes:'Demo profile — Fill in actual employee details from Edit Profile tab.',
-    })];
-  });
-  useEffect(()=>{ localStorage.setItem('gnc_profiles_v8',JSON.stringify(profiles)); },[profiles]);
+  // ── Firestore hooks (replace localStorage) ───────────────────────
+  const { sysConfig, setSysConfig } = useSysConfig();
+
+  // ── Firestore profiles hook ──────────────────────────────────────
+  const {
+    profiles, loading: profilesLoading,
+    saveProfile, deleteProfile: deleteProfileFS,
+    importProfiles, deleteAllProfiles,
+  } = useProfiles();
+
+  // setProfiles helper — saves to Firestore
+  const setProfiles = useCallback((
+    updater: EmployeeData[] | ((prev: EmployeeData[]) => EmployeeData[])
+  ) => {
+    const newProfiles = typeof updater === 'function' ? updater(profiles) : updater;
+    // Diff: save changed/new profiles, delete removed ones
+    const existingIds = new Set(profiles.map(p => p.id));
+    const newIds      = new Set(newProfiles.map(p => p.id));
+    // Save new or updated
+    newProfiles.forEach(p => saveProfile(p));
+    // Delete removed
+    profiles.filter(p => !newIds.has(p.id)).forEach(p => deleteProfileFS(p.id));
+  }, [profiles, saveProfile, deleteProfileFS]);
 
   // ── Auto-backup reminder: warn if no backup in 7 days ──────────
   const [showBackupBanner, setShowBackupBanner] = useState(false);
@@ -606,11 +608,50 @@ export default function App() {
   };
 
   const [activeId, setActiveId] = useState<string>(profiles[0]?.id||'');
-  const emp = useMemo(()=>profiles.find(p=>p.id===activeId)||profiles[0]||BLANK_PROFILE('temp'),[profiles,activeId]);
-  const setEmp = useCallback((updater: EmployeeData | ((prev: EmployeeData)=>EmployeeData)) => {
-    setProfiles(ps=>ps.map(p=>p.id===activeId?(typeof updater==='function'?updater(p):updater):p));
+
+  // ── LOCAL DRAFT STATE — prevents Firestore lag on every keystroke ──
+  // localDraft holds the currently-editing employee in local state.
+  // Changes are written to Firestore only on explicit save or blur.
+  const [localDraft, setLocalDraft] = useState<EmployeeData|null>(null);
+
+  // When active profile changes from Firestore OR user switches profile,
+  // reset local draft to the freshly fetched profile.
+  const cloudEmp = useMemo(()=>profiles.find(p=>p.id===activeId)||profiles[0]||BLANK_PROFILE('temp'),[profiles,activeId]);
+  const emp = localDraft ?? cloudEmp;
+
+  // Sync: if Firestore delivers a new version AND we have no pending local edits, update draft
+  useEffect(()=>{
+    setLocalDraft(null); // reset draft when active profile switches
   },[activeId]);
+
+  // setEmp — updates local draft instantly (no Firestore write)
+  const setEmp = useCallback((updater: EmployeeData | ((prev: EmployeeData)=>EmployeeData)) => {
+    setLocalDraft(prev => {
+      const base = prev ?? cloudEmp;
+      return typeof updater === 'function' ? updater(base) : updater;
+    });
+  },[cloudEmp]);
+
+  // setE — shorthand for single-field updates (still local only)
   const setE = (field:keyof EmployeeData) => (v:any) => setEmp((p:EmployeeData)=>({...p,[field]:typeof p[field]==='number'?(Number(v)||0):v}));
+
+  // saveEmp — explicitly flush local draft to Firestore
+  const saveEmp = useCallback(() => {
+    if(localDraft) {
+      saveProfile(localDraft);
+      showToast('Profile saved to cloud ✅','success');
+    }
+  },[localDraft, saveProfile, showToast]);
+
+  // Auto-save when switching tabs or profiles (if draft exists)
+  const switchProfile = useCallback((id: string) => {
+    if(localDraft) saveProfile(localDraft); // flush before switching
+    setLocalDraft(null);
+    setActiveId(id);
+  },[localDraft, saveProfile]);
+
+  // setProfiles — for bulk ops (star, color, etc.) — these go to Firestore directly
+  // because they are not text inputs (no lag issue)
 
   const [profileSearch, setProfileSearch] = useState('');
   const [profileFilter, setProfileFilter] = useState<string>('all');
@@ -726,15 +767,15 @@ export default function App() {
     const id=uid();
     const newP=BLANK_PROFILE(id,{name:'',college:sysConfig.collegeName||'',color:PROFILE_COLORS[profiles.length%PROFILE_COLORS.length]});
     setProfiles(ps=>[...ps,newP]);
-    setActiveId(id);
+    switchProfile(id);
     setTab('profile');
     showToast('New profile created','success');
   };
 
   const deleteProfile = (id:string) => {
     if(profiles.length<=1){ showToast('Cannot delete last profile','error'); return; }
-    setProfiles(ps=>ps.filter(p=>p.id!==id));
-    if(activeId===id) setActiveId(profiles.find(p=>p.id!==id)?.id||'');
+    deleteProfileFS(id);
+    if(activeId===id) switchProfile(profiles.find(p=>p.id!==id)?.id||'');
     showToast('Profile deleted','info');
   };
 
@@ -743,13 +784,13 @@ export default function App() {
     const newId=uid();
     const dup={...src,id:newId,name:src.name+' (Copy)',isStarred:false,color:PROFILE_COLORS[profiles.length%PROFILE_COLORS.length]};
     setProfiles(ps=>[...ps,dup]);
-    setActiveId(newId);
+    switchProfile(newId);
     showToast('Profile duplicated','success');
   };
 
   const toggleStar = (id:string) => setProfiles(ps=>ps.map(p=>p.id===id?{...p,isStarred:!p.isStarred}:p));
 
-  const switchTo = (id:string) => { setActiveId(id); setTab('profile'); };
+  const switchTo = (id:string) => { switchProfile(id); setTab('profile'); };
 
   const importAllProfiles = (e:React.ChangeEvent<HTMLInputElement>) => {
     const file=e.target.files?.[0]; if(!file) return;
@@ -759,26 +800,110 @@ export default function App() {
         const wb=XLSX.read(evt.target?.result,{type:'binary'});
         const rows=XLSX.utils.sheet_to_json<any>(wb.Sheets[wb.SheetNames[0]]);
         const newProfiles=rows.map((r:any)=>BLANK_PROFILE(uid(),r));
-        setProfiles(ps=>[...ps,...newProfiles]);
-        showToast(`${newProfiles.length} profiles imported`,'success');
+        importProfiles(newProfiles).then(()=>showToast(`${newProfiles.length} profiles imported`,'success'));
       } catch(err){ showToast('Import failed. Check file format.','error'); }
     };
     e.target.value=''; reader.readAsBinaryString(file);
   };
 
   const exportAllProfiles = () => {
-    const hdrs = ['Name','Salutation','Designation','Department','College','PAN','DOJ','DOB','Level','Basic Pay','DA%','HRA','Category','Notes'];
+    const today = new Date().toLocaleDateString('en-IN');
+
+    // Per-employee salary calculation
+    const calcRow = (p: EmployeeData) => {
+      const b=p.basicPay7th, da=pct(b,p.daRate);
+      const hra=pct(b,HRA_RATES[p.hraCategory]*100);
+      const taDA=pct(p.transportAllowance,p.daRate);
+      const gross=b+da+hra+p.medicalAllowance+p.transportAllowance+taDA+(p.ceaChildren*2250)+(p.hostelChildren*6750);
+      const npsEmp=p.applyNPS?pct(b+da,p.npsEmployee):0;
+      const npsEr=p.applyNPS?pct(b+da,p.npsEmployer):0;
+      const gsli=p.applyGSLI?getGSLI(p.payLevel):p.gsliContribution;
+      const pt=p.applyPT?p.professionalTax:0;
+      const lic=p.applyLIC?p.licDeduction:0;
+      const soc=p.applySociety?p.societyDeduction:0;
+      const td=npsEmp+gsli+pt+lic+soc;
+      return {gross,npsEmp,npsEr,gsli,pt,lic,soc,td,net:gross-td};
+    };
+
     exportXLSX({
-      filename:`All_Profiles_${sysConfig.collegeName.replace(/\s+/g,'_')}`,
-      sheets:[{
-        name:'Employee Profiles',
-        title:`EMPLOYEE PROFILES — ${sysConfig.collegeName}`,
-        subtitle:`Total Employees: ${profiles.length} | Exported on ${new Date().toLocaleDateString('en-IN')}`,
-        headers:hdrs,
-        rows:profiles.map(p=>[p.name,p.salutation,p.designation,p.department,p.college,p.panNumber,p.dateOfJoining,p.dateOfBirth,`Level ${p.payLevel}`,p.basicPay7th,p.daRate+'%',p.hraCategory,p.category,p.notes||'']),
-        headerColor:'1A3C5E', altColor:'EBF5FB',
-      }]
+      filename:`Employee_Master_${sysConfig.collegeName.replace(/\s+/g,'_')}_${today.replace(/\//g,'-')}`,
+      sheets:[
+        // ── SHEET 1: Master Profile List ──────────────────────────
+        {
+          name:'Employee Master List',
+          title:`EMPLOYEE MASTER LIST — ${sysConfig.collegeName.toUpperCase()}`,
+          subtitle:`${sysConfig.address} | Total: ${profiles.length} employees | Generated: ${today}`,
+          headers:['S.No','Name','Salutation','Designation','Department','Category','DOJ','DOB','PAN','PRAN','Bank A/c','IFSC','Pay Level','Basic Pay (7th)','DA %','HRA City','Transport','Medical','NPS','GSLI','Tax Regime','Notes'],
+          rows:profiles.map((p,i)=>[
+            i+1, p.name, p.salutation, p.designation, p.department,
+            p.category, p.dateOfJoining||'—', p.dateOfBirth||'—',
+            p.panNumber||'—', p.pranNumber||'—',
+            p.bankAccount||'—', p.ifscCode||'—',
+            `Level ${p.payLevel}`, p.basicPay7th, p.daRate+'%',
+            p.hraCategory, p.transportAllowance, p.medicalAllowance,
+            p.applyNPS?`${p.npsEmployee}%+${p.npsEmployer}%`:'No',
+            p.applyGSLI?`₹${getGSLI(p.payLevel)}/mo`:'No',
+            p.taxRegime==='new'?'New Regime':'Old Regime',
+            p.notes||'',
+          ]),
+          headerColor:'1A3C5E', altColor:'EBF5FB',
+        },
+        // ── SHEET 2: Monthly Salary Summary ───────────────────────
+        {
+          name:'Monthly Salary Summary',
+          title:`MONTHLY SALARY SUMMARY — ${sysConfig.collegeName.toUpperCase()}`,
+          subtitle:`All Employees | DA: Current Rate | Generated: ${today}`,
+          headers:['S.No','Name','Designation','Level','Basic Pay','DA Amt','HRA','Transport','Medical','GROSS','NPS Emp','NPS Govt','GSLI','Prof.Tax','Tot.Ded','NET PAY'],
+          rows:profiles.map((p,i)=>{
+            const c=calcRow(p);
+            return [
+              i+1, `${p.salutation} ${p.name}`, p.designation,
+              `Level ${p.payLevel}`, p.basicPay7th,
+              pct(p.basicPay7th,p.daRate),
+              pct(p.basicPay7th,HRA_RATES[p.hraCategory]*100),
+              p.transportAllowance+pct(p.transportAllowance,p.daRate),
+              p.medicalAllowance,
+              c.gross, c.npsEmp, c.npsEr, c.gsli, c.pt, c.td, c.net,
+            ];
+          }),
+          totals:[
+            'TOTAL','','','','',
+            profiles.reduce((s,p)=>s+pct(p.basicPay7th,p.daRate),0),
+            profiles.reduce((s,p)=>s+pct(p.basicPay7th,HRA_RATES[p.hraCategory]*100),0),
+            profiles.reduce((s,p)=>s+p.transportAllowance+pct(p.transportAllowance,p.daRate),0),
+            profiles.reduce((s,p)=>s+p.medicalAllowance,0),
+            profiles.reduce((s,p)=>s+calcRow(p).gross,0),
+            profiles.reduce((s,p)=>s+calcRow(p).npsEmp,0),
+            profiles.reduce((s,p)=>s+calcRow(p).npsEr,0),
+            profiles.reduce((s,p)=>s+calcRow(p).gsli,0),
+            profiles.reduce((s,p)=>s+calcRow(p).pt,0),
+            profiles.reduce((s,p)=>s+calcRow(p).td,0),
+            profiles.reduce((s,p)=>s+calcRow(p).net,0),
+          ],
+          headerColor:'1F5C2E', altColor:'E8F5E9',
+        },
+        // ── SHEET 3: NPS Register ──────────────────────────────────
+        {
+          name:'NPS Register',
+          title:`NPS CONTRIBUTION REGISTER — ${sysConfig.collegeName.toUpperCase()}`,
+          subtitle:`National Pension System | Employee 10% + Govt 14% | ${today}`,
+          headers:['S.No','Name','Designation','PRAN No.','Basic Pay','DA Amt','Basic+DA','NPS Emp (10%)','NPS Govt (14%)','Total NPS/mo','Annual NPS','Status'],
+          rows:profiles.filter(p=>p.applyNPS).map((p,i)=>{
+            const bd=p.basicPay7th+pct(p.basicPay7th,p.daRate);
+            const emp10=pct(bd,p.npsEmployee), emp14=pct(bd,p.npsEmployer);
+            return [i+1,`${p.salutation} ${p.name}`,p.designation,p.pranNumber||'—',p.basicPay7th,pct(p.basicPay7th,p.daRate),bd,emp10,emp14,emp10+emp14,(emp10+emp14)*12,'Active'];
+          }),
+          totals:['TOTAL','','','','','','',
+            profiles.filter(p=>p.applyNPS).reduce((s,p)=>s+pct(p.basicPay7th+pct(p.basicPay7th,p.daRate),p.npsEmployee),0),
+            profiles.filter(p=>p.applyNPS).reduce((s,p)=>s+pct(p.basicPay7th+pct(p.basicPay7th,p.daRate),p.npsEmployer),0),
+            profiles.filter(p=>p.applyNPS).reduce((s,p)=>s+pct(p.basicPay7th+pct(p.basicPay7th,p.daRate),p.npsEmployee+p.npsEmployer),0),
+            profiles.filter(p=>p.applyNPS).reduce((s,p)=>s+pct(p.basicPay7th+pct(p.basicPay7th,p.daRate),p.npsEmployee+p.npsEmployer)*12,0),
+            ''],
+          headerColor:'4A1486', altColor:'F3E5F5',
+        },
+      ]
     });
+    showToast('Premium Excel exported — 3 sheets ✅','success');
   };
 
   const applyDesig = (d:string) => {
@@ -958,46 +1083,201 @@ export default function App() {
   // ══════════════════════════════════════════════════════════════════
   // SALARY SLIP COMPONENT
   // ══════════════════════════════════════════════════════════════════
-  const SalarySlip = () => (
-    <div ref={slipRef} className="bg-white relative overflow-hidden" style={{fontFamily:'"Times New Roman",serif',padding:'28px 36px',border:'8px solid #1e3a8a',outline:'2px solid #000',outlineOffset:'-12px',minHeight:'790px'}}>
-      {sysConfig.logoBase64&&<div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',opacity:0.05,pointerEvents:'none',zIndex:0}}><img src={sysConfig.logoBase64} alt="" style={{width:'420px'}}/></div>}
-      <div style={{position:'relative',zIndex:1}}>
-        <div style={{textAlign:'center',borderBottom:'3px double #000',paddingBottom:'10px',marginBottom:'12px',position:'relative'}}>
-          {sysConfig.logoBase64&&<img src={sysConfig.logoBase64} alt="Logo" style={{position:'absolute',left:0,top:0,height:'60px',objectFit:'contain'}}/>}
-          <p style={{fontSize:'15px',fontWeight:'900',textTransform:'uppercase',letterSpacing:'2px',color:'#1e3a8a'}}>{sysConfig.collegeName}</p>
-          <p style={{fontSize:'10px',fontWeight:'bold',color:'#333',marginTop:'2px'}}>{sysConfig.address}</p>
-          <p style={{fontSize:'11px',fontWeight:'bold',marginTop:'6px',background:'#f0f0f0',display:'inline-block',padding:'4px 14px',border:'1px solid #000'}}>Non-Teaching Staff Salary Slip — {emp.salaryMonth} {emp.salaryYear}</p>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'18px',marginBottom:'14px'}}>
-          <div>{[['Name',fullName],['Designation',emp.designation],['Department',emp.department],['PAN',emp.panNumber||'—'],['Date of Birth',emp.dateOfBirth||'—'],['Joining Date',emp.dateOfJoining]].map(([k,v])=><p key={k} style={{display:'flex',justifyContent:'space-between',borderBottom:'1px dotted #ccc',paddingBottom:'3px',marginBottom:'3px',fontSize:'10px'}}><strong>{k}:</strong><span>{v}</span></p>)}</div>
-          <div>{[['PRAN',emp.pranNumber||'—'],['Bank A/c',emp.bankAccount||'—'],['IFSC',emp.ifscCode||'—'],['Level',`Level ${emp.payLevel}`],['Tax Regime',emp.taxRegime==='new'?'New Regime':'Old Regime']].map(([k,v])=><p key={k} style={{display:'flex',justifyContent:'space-between',borderBottom:'1px dotted #ccc',paddingBottom:'3px',marginBottom:'3px',fontSize:'10px'}}><strong>{k}:</strong><span>{v}</span></p>)}</div>
-        </div>
-        <div style={{border:'2px solid #000',marginBottom:'12px'}}>
-          <div style={{background:'#f0f0f0',padding:'5px',fontWeight:'bold',textAlign:'center',fontSize:'11px',borderBottom:'2px solid #000',letterSpacing:'1px',textTransform:'uppercase'}}>Monthly Salary Breakdown (7th Pay Commission)</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr'}}>
-            <div style={{padding:'12px',borderRight:'1px solid #000'}}>
-              <p style={{fontSize:'9px',fontWeight:'bold',textDecoration:'underline',marginBottom:'7px',textTransform:'uppercase'}}>Earnings</p>
-              {[['Basic Pay',s7.b],[`DA (${emp.daRate}%)`,s7.da],['HRA ('+HRA_RATES[emp.hraCategory]*100+'%)',s7.hra],[`Transport (+DA)`,s7.ta+s7.taDA],['Medical',s7.ma],...(s7.wash>0?[['Washing',s7.wash]]:[] as any),...(s7.cea>0?[['CEA',s7.cea]]:[] as any)].map(([k,v]:any)=><p key={k} style={{display:'flex',justifyContent:'space-between',marginBottom:'4px',fontSize:'10px'}}><span>{k}:</span><span>{rs(v)}</span></p>)}
-              <div style={{borderTop:'2px solid #000',paddingTop:'5px',marginTop:'5px',display:'flex',justifyContent:'space-between',fontWeight:'900',fontSize:'11px'}}><span>Gross Total:</span><span>{rs(s7.gross)}</span></div>
+  const SalarySlip = () => {
+    const refNo = `GNC${String(Math.floor(Math.random()*9000)+1000)}`;
+    const today = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'numeric',year:'numeric'});
+    // earnings rows — only non-zero
+    const earnRows: [string,number][] = [
+      ['Basic Pay', s7.b],
+      [`DA (${emp.daRate}%)`, s7.da],
+      [`HRA – Y (${Math.round(HRA_RATES[emp.hraCategory]*100)}%)`, s7.hra],
+      ['Medical Allowance', s7.ma],
+      [`Transport Allowance`, s7.ta+s7.taDA],
+      ...(s7.wash>0  ?[['Washing Allowance',s7.wash]] as [string,number][]: []),
+      ...(s7.cea>0   ?[['CEA (Children)',s7.cea]]      as [string,number][]: []),
+      ...(s7.hostel>0?[['Hostel Subsidy',s7.hostel]]   as [string,number][]: []),
+    ];
+    const dedRows: [string,number][] = [
+      ...(emp.applyNPS ?[['NPS (10% B+D)',s7.npsEmp],['NPS Employer (14%)',s7.npsEr]] as [string,number][]: []),
+      ...(emp.applyGSLI?[['GSLI Contribution',s7.gsli]]  as [string,number][]: []),
+      ...(emp.applyPT  ?[['Professional Tax',s7.pt]]     as [string,number][]: []),
+      ...(emp.applyIT  ?[['Income Tax (TDS)',s7.monthIT]] as [string,number][]: []),
+      ...(emp.applyLIC ?[['LIC Deduction',s7.lic]]       as [string,number][]: []),
+      ...(emp.applySociety?[['Society Deduction',s7.soc]] as [string,number][]: []),
+    ];
+
+    return (
+      <div ref={slipRef} style={{
+        fontFamily:"'Arial','Helvetica Neue',sans-serif",
+        margin:'0 auto',
+        position:'relative',
+        width:'100%',
+        minHeight:'780px',
+        padding:'6px',
+        background:'linear-gradient(135deg,#1e3a8a 0%,#1e40af 30%,#1d4ed8 60%,#2563eb 100%)',
+        borderRadius:'4px',
+      }}>
+        {/* White inner page */}
+        <div style={{
+          background:'#fff',
+          borderRadius:'2px',
+          padding:'28px 32px 24px',
+          position:'relative',
+          overflow:'hidden',
+          minHeight:'768px',
+        }}>
+
+          {/* ── WATERMARK ── */}
+          {logoSrc(sysConfig) && (
+            <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',opacity:0.045,pointerEvents:'none',zIndex:0}}>
+              <img src={logoSrc(sysConfig)} alt="" style={{width:'500px',height:'auto'}}/>
             </div>
-            <div style={{padding:'12px'}}>
-              <p style={{fontSize:'9px',fontWeight:'bold',textDecoration:'underline',marginBottom:'7px',textTransform:'uppercase'}}>Deductions</p>
-              {[...(emp.applyNPS?[['NPS Employee (10%)',s7.npsEmp],['NPS Employer (14%)',s7.npsEr]]:[] as any),...(emp.applyGSLI?[['GSLI',s7.gsli]]:[] as any),...(emp.applyPT?[['Prof. Tax',s7.pt]]:[] as any),...(emp.applyIT?[['Income Tax (TDS)',s7.monthIT]]:[] as any),...(emp.applyLIC?[['LIC',s7.lic]]:[] as any),...(emp.applySociety?[['Society',s7.soc]]:[] as any)].map(([k,v]:any)=><p key={k} style={{display:'flex',justifyContent:'space-between',marginBottom:'4px',fontSize:'10px'}}><span>{k}:</span><span>{rs(v)}</span></p>)}
-              <div style={{borderTop:'2px solid #000',paddingTop:'5px',marginTop:'5px',display:'flex',justifyContent:'space-between',fontWeight:'900',fontSize:'11px'}}><span>Total Deductions:</span><span>{rs(s7.td)}</span></div>
+          )}
+
+          <div style={{position:'relative',zIndex:1}}>
+            {/* ── HEADER ── */}
+            <div style={{display:'flex',alignItems:'center',gap:'16px',marginBottom:'14px',paddingBottom:'14px',borderBottom:'2px solid #1e3a8a'}}>
+              {/* Logo */}
+              <div style={{flexShrink:0,width:'72px',height:'72px'}}>
+                {logoSrc(sysConfig)
+                  ? <img src={logoSrc(sysConfig)} alt="Logo" style={{width:'72px',height:'72px',objectFit:'contain'}}/>
+                  : <div style={{width:'72px',height:'72px',background:'#e2e8f0',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'28px'}}>🏛️</div>
+                }
+              </div>
+              {/* College name */}
+              <div style={{flex:1,textAlign:'center'}}>
+                <div style={{fontSize:'18px',fontWeight:'900',textTransform:'uppercase',letterSpacing:'3px',color:'#1e3a8a',marginBottom:'3px'}}>
+                  {sysConfig.collegeName || 'GURU NANAK COLLEGE'}
+                </div>
+                <div style={{fontSize:'11px',color:'#475569',marginBottom:'6px'}}>{sysConfig.address}</div>
+                <div style={{display:'inline-block',border:'1.5px solid #1e3a8a',padding:'4px 18px',fontSize:'11px',fontWeight:'700',color:'#1e3a8a',letterSpacing:'1px'}}>
+                  Non-Teaching Staff Salary Statement
+                </div>
+              </div>
+            </div>
+
+            {/* ── REF + DATE ── */}
+            <div style={{display:'flex',gap:'12px',justifyContent:'center',marginBottom:'18px'}}>
+              <div style={{border:'1px solid #1e3a8a',padding:'4px 16px',fontSize:'11px',fontWeight:'700',color:'#1e3a8a',borderRadius:'2px'}}>
+                Ref No: {refNo}
+              </div>
+              <div style={{border:'1px solid #1e3a8a',padding:'4px 16px',fontSize:'11px',fontWeight:'700',color:'#1e3a8a',borderRadius:'2px'}}>
+                Date: {today}
+              </div>
+              <div style={{border:'1px solid #1e3a8a',padding:'4px 16px',fontSize:'11px',fontWeight:'700',color:'#1e3a8a',borderRadius:'2px'}}>
+                Month: {emp.salaryMonth} {emp.salaryYear}
+              </div>
+            </div>
+
+            {/* ── EMPLOYEE + SERVICE DETAILS ── */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0',marginBottom:'18px',border:'1px solid #e2e8f0',borderRadius:'4px',overflow:'hidden'}}>
+              {/* Left: Employee Details */}
+              <div style={{padding:'14px 16px',borderRight:'1px solid #e2e8f0'}}>
+                <div style={{fontSize:'9px',fontWeight:'700',textTransform:'uppercase',letterSpacing:'1.5px',color:'#1e3a8a',textDecoration:'underline',marginBottom:'10px'}}>Employee Details</div>
+                {([
+                  ['Name',          fullName],
+                  ['Designation',   emp.designation],
+                  ['Department',    emp.department],
+                  ['Joining Date',  emp.dateOfJoining || '—'],
+                  ['PAN Number',    emp.panNumber     || '—'],
+                ] as [string,string][]).map(([k,v])=>(
+                  <div key={k} style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'5px',fontSize:'11px'}}>
+                    <span style={{color:'#475569',fontWeight:'600'}}>{k}:</span>
+                    <span style={{color:'#0f172a',fontWeight:'700',textAlign:'right',maxWidth:'200px'}}>{v}</span>
+                  </div>
+                ))}
+              </div>
+              {/* Right: Service Details */}
+              <div style={{padding:'14px 16px'}}>
+                <div style={{fontSize:'9px',fontWeight:'700',textTransform:'uppercase',letterSpacing:'1.5px',color:'#1e3a8a',textDecoration:'underline',marginBottom:'10px'}}>Service Details</div>
+                {([
+                  ['PRAN Number',    emp.pranNumber    || '—'],
+                  ['Bank A/c',       emp.bankAccount   || '—'],
+                  ['IFSC Code',      emp.ifscCode      || '—'],
+                  ['Pay Matrix Level', `Level ${emp.payLevel}`],
+                  ['Tax Regime',     emp.taxRegime==='new'?`New (FY ${emp.financialYear})`:'Old Regime'],
+                ] as [string,string][]).map(([k,v])=>(
+                  <div key={k} style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'5px',fontSize:'11px'}}>
+                    <span style={{color:'#475569',fontWeight:'600'}}>{k}:</span>
+                    <span style={{color:'#0f172a',fontWeight:'700',textAlign:'right'}}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── SALARY TABLE ── */}
+            <div style={{border:'1.5px solid #1e3a8a',borderRadius:'4px',overflow:'hidden',marginBottom:'16px'}}>
+              {/* Table header */}
+              <div style={{background:'#1e3a8a',color:'#fff',padding:'8px 16px',textAlign:'center',fontSize:'11px',fontWeight:'800',letterSpacing:'2px',textTransform:'uppercase'}}>
+                Monthly Salary Breakdown (7th Pay Commission) — {emp.salaryMonth.toUpperCase()} {emp.salaryYear}
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr'}}>
+                {/* Earnings */}
+                <div style={{padding:'14px 16px',borderRight:'1px solid #e2e8f0'}}>
+                  <div style={{fontSize:'9px',fontWeight:'800',textTransform:'uppercase',letterSpacing:'1.5px',color:'#1e3a8a',textDecoration:'underline',marginBottom:'10px'}}>Earnings</div>
+                  {earnRows.map(([k,v])=>(
+                    <div key={k} style={{display:'flex',justifyContent:'space-between',marginBottom:'5px',fontSize:'11px'}}>
+                      <span style={{color:'#334155'}}>{k}</span>
+                      <span style={{fontWeight:'600',color:'#0f172a',fontFamily:"'Courier New',monospace"}}>{rs(v)}</span>
+                    </div>
+                  ))}
+                  <div style={{borderTop:'1.5px solid #1e3a8a',paddingTop:'7px',marginTop:'7px',display:'flex',justifyContent:'space-between',fontWeight:'900',fontSize:'12px',color:'#1e3a8a'}}>
+                    <span>Gross Total:</span>
+                    <span style={{fontFamily:"'Courier New',monospace"}}>{rs(s7.gross)}</span>
+                  </div>
+                </div>
+                {/* Deductions */}
+                <div style={{padding:'14px 16px'}}>
+                  <div style={{fontSize:'9px',fontWeight:'800',textTransform:'uppercase',letterSpacing:'1.5px',color:'#1e3a8a',textDecoration:'underline',marginBottom:'10px'}}>Deductions</div>
+                  {dedRows.length > 0
+                    ? dedRows.map(([k,v])=>(
+                        <div key={k} style={{display:'flex',justifyContent:'space-between',marginBottom:'5px',fontSize:'11px'}}>
+                          <span style={{color:'#334155'}}>{k}</span>
+                          <span style={{fontWeight:'600',color:'#dc2626',fontFamily:"'Courier New',monospace"}}>{rs(v)}</span>
+                        </div>
+                      ))
+                    : <div style={{fontSize:'11px',color:'#94a3b8',fontStyle:'italic'}}>No deductions applied</div>
+                  }
+                  <div style={{borderTop:'1.5px solid #1e3a8a',paddingTop:'7px',marginTop:'7px',display:'flex',justifyContent:'space-between',fontWeight:'900',fontSize:'12px',color:'#dc2626'}}>
+                    <span>Total Deductions:</span>
+                    <span style={{fontFamily:"'Courier New',monospace"}}>{rs(s7.td)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Net Pay footer */}
+              <div style={{background:'linear-gradient(135deg,#1e3a8a,#1d4ed8)',color:'#fff',padding:'16px 20px',textAlign:'center',borderTop:'1.5px solid #1e3a8a'}}>
+                <div style={{fontSize:'9px',fontWeight:'700',letterSpacing:'3px',textTransform:'uppercase',opacity:0.8,marginBottom:'4px'}}>Net Monthly Payable</div>
+                <div style={{fontSize:'34px',fontWeight:'900',letterSpacing:'-1px',fontFamily:"'Arial Black',sans-serif"}}>
+                  {rs(s7.net)}/-
+                </div>
+                <div style={{fontSize:'10px',marginTop:'4px',opacity:0.75,fontStyle:'italic'}}>{toWords(s7.net)}</div>
+              </div>
+            </div>
+
+            {/* ── SIGNATURES ── */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',textAlign:'center',marginTop:'40px',gap:'20px'}}>
+              {[
+                {role:'Employee Signature', name:fullName},
+                {role:'Accountant',         name:''},
+                {role:'Principal',                   name:sysConfig.collegeName},
+              ].map(s=>(
+                <div key={s.role} style={{borderTop:'1px solid #000',paddingTop:'6px'}}>
+                  <div style={{fontSize:'10px',fontWeight:'700',color:'#1e3a8a'}}>{s.role}</div>
+                  {s.name && <div style={{fontSize:'9px',color:'#475569',marginTop:'3px',fontStyle:'italic'}}>{s.name}</div>}
+                </div>
+              ))}
+            </div>
+
+            {/* ── FOOTER ── */}
+            <div style={{marginTop:'20px',paddingTop:'8px',borderTop:'1px solid #e2e8f0',textAlign:'center',fontSize:'8px',color:'#94a3b8'}}>
+              © 2026 Pankaj Kumar Prasad · Jharkhand Pay Master Pro v8.0 · Generated via Jharkhand Pay Master Pro on {new Date().toLocaleString('en-IN')}
             </div>
           </div>
-          <div style={{background:'#1a1a1a',color:'#fff',padding:'14px',textAlign:'center',borderTop:'2px solid #000'}}>
-            <p style={{fontSize:'9px',fontWeight:'bold',letterSpacing:'2px',textTransform:'uppercase',marginBottom:'3px'}}>Net Monthly Payable</p>
-            <p style={{fontSize:'30px',fontWeight:'900'}}>{rs(s7.net)}/-</p>
-            <p style={{fontSize:'9px',marginTop:'3px',opacity:0.7}}>{toWords(s7.net)}</p>
-          </div>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',textAlign:'center',marginTop:'36px',gap:'20px'}}>
-          {['Employee Signature','Accountant','Principal'].map(r=><div key={r} style={{borderTop:'1px solid #000',paddingTop:'5px',fontSize:'10px',fontWeight:'bold'}}>{r}<div style={{fontSize:'9px',fontWeight:'normal',marginTop:'3px',color:'#666'}}>{r==='Principal'?sysConfig.collegeName:''}</div></div>)}
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const filteredProfiles = useMemo(()=>{
     return profiles.filter(p=>{
@@ -1030,6 +1310,21 @@ export default function App() {
     {g:'reports',label:'Reports & Docs'},
     {g:'tools',label:'Tools'},
   ];
+
+  // ── Auth guard ───────────────────────────────────────────────────
+  if (authLoading) return (
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#080b0f',flexDirection:'column',gap:'16px'}}>
+      <div style={{fontSize:'40px'}}>💰</div>
+      <div style={{color:'#c8a84b',fontFamily:'sans-serif',fontSize:'14px',letterSpacing:'0.1em'}}>Loading Pay Master Pro…</div>
+    </div>
+  );
+  if (!user) return <LoginPage onLogin={()=>{}} />;
+  if (profilesLoading && profiles.length === 0) return (
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#080b0f',flexDirection:'column',gap:'16px'}}>
+      <div style={{fontSize:'40px'}}>☁️</div>
+      <div style={{color:'#2dd4bf',fontFamily:'sans-serif',fontSize:'14px',letterSpacing:'0.1em'}}>Syncing data from cloud…</div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-[#f8fafc] font-sans text-gray-900">
@@ -1065,6 +1360,10 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Logout button */}
+            <button onClick={()=>{ import('./firebase').then(({auth})=>{ import('firebase/auth').then(({signOut})=>signOut(auth)); }); }} title={user?.email||'Logout'} className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-100 hover:bg-red-50 hover:text-red-600 text-gray-500 rounded-lg text-xs font-bold transition-colors">
+              👤 {user?.email?.split('@')[0]||'User'} <span className="opacity-40 ml-0.5">✕</span>
+            </button>
             {/* Profile Quick Switcher */}
             <div className="hidden lg:flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-xl border border-gray-200">
               {profiles.slice(0,5).map(p=>(
@@ -1521,7 +1820,21 @@ export default function App() {
                     <p className="text-[11px] font-black text-gray-500 uppercase tracking-widest mb-3">Notes</p>
                     <textarea value={emp.notes} onChange={e=>setEmp((p:EmployeeData)=>({...p,notes:e.target.value}))} rows={2} placeholder="Any notes about this employee..." className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-400 resize-none"/>
                   </div>
-                  <NavRow onPrev={goPrev} onNext={goNext}/>
+                  <NavRow onPrev={goPrev} onNext={goNext}
+                    extras={
+                      localDraft && (
+                        <button onClick={saveEmp}
+                          className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 shadow-md animate-pulse">
+                          ☁ Save to Cloud
+                        </button>
+                      )
+                    }
+                  />
+                  {localDraft && (
+                    <div className="mt-2 flex items-center gap-2 text-xs text-amber-600 font-bold">
+                      <span>⚠ Unsaved changes — click Save to Cloud or switch tabs to auto-save</span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1673,55 +1986,186 @@ export default function App() {
                       <button onClick={exportYearly} className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold hover:bg-emerald-100"><TableProperties size={12}/> Excel</button>
                     </div>
                   </div>
-                  <div ref={yearlyRef} className="overflow-x-auto rounded-xl border border-gray-200 bg-white -mx-2 sm:mx-0">
-                    <div className="p-3 bg-amber-700 text-white text-center">
-                      <p className="text-sm font-black uppercase">{sysConfig.collegeName}</p>
-                      <p className="text-xs mt-0.5">{fullName} · {emp.designation} · FY {yearlyFY}</p>
+                  {/* ══ PREMIUM YEARLY SUMMARY — PDF-optimized ══ */}
+                  <div ref={yearlyRef} style={{
+                    background:'#fff',fontFamily:"'Segoe UI',Arial,sans-serif",
+                    border:'6px solid #1e3a8a',borderRadius:'8px',
+                    width:'100%',
+                  }}>
+                    {/* ── HEADER ── */}
+                    <div style={{background:'linear-gradient(135deg,#1e3a8a 0%,#1d4ed8 60%,#2563eb 100%)',padding:'12px 20px',position:'relative',overflow:'hidden'}}>
+                      <div style={{position:'absolute',top:'-30px',right:'-30px',width:'120px',height:'120px',background:'rgba(255,255,255,0.04)',borderRadius:'50%'}}/>
+                      <div style={{position:'absolute',bottom:'-20px',left:'40%',width:'80px',height:'80px',background:'rgba(255,255,255,0.03)',borderRadius:'50%'}}/>
+                      <div style={{display:'flex',alignItems:'center',gap:'18px',position:'relative',zIndex:1}}>
+                        {logoSrc(sysConfig)&&<img src={logoSrc(sysConfig)} alt="" style={{height:'40px',width:'40px',objectFit:'contain',background:'rgba(255,255,255,0.12)',borderRadius:'6px',padding:'3px'}}/>}
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:'14px',fontWeight:'900',color:'#fff',textTransform:'uppercase',letterSpacing:'1.5px'}}>{sysConfig.collegeName}</div>
+                          <div style={{fontSize:'11px',color:'rgba(255,255,255,0.75)',marginTop:'3px'}}>{sysConfig.address}</div>
+                        </div>
+                        <div style={{textAlign:'right'}}>
+                          <div style={{background:'rgba(255,255,255,0.15)',border:'1px solid rgba(255,255,255,0.3)',borderRadius:'6px',padding:'6px 16px',display:'inline-block'}}>
+                            <div style={{fontSize:'10px',color:'rgba(255,255,255,0.7)',letterSpacing:'1px',textTransform:'uppercase'}}>Financial Year</div>
+                            <div style={{fontSize:'18px',fontWeight:'900',color:'#fde68a',marginTop:'2px'}}>FY {yearlyFY}</div>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Employee strip */}
+                      <div style={{marginTop:'8px',background:'rgba(255,255,255,0.1)',borderRadius:'6px',padding:'7px 14px',display:'flex',gap:'20px',flexWrap:'wrap',position:'relative',zIndex:1}}>
+                        {[
+                          ['Employee',fullName],
+                          ['Designation',emp.designation],
+                          ['Level',`Level-${emp.payLevel}`],
+                          ['Basic Pay',rs(emp.basicPay7th)],
+                          ['DA Rate',`${emp.daRate}%`],
+                          ['Department',emp.department],
+                        ].map(([l,v])=>(
+                          <div key={l as string} style={{minWidth:'120px'}}>
+                            <div style={{fontSize:'9px',color:'rgba(255,255,255,0.6)',textTransform:'uppercase',letterSpacing:'1px'}}>{l}</div>
+                            <div style={{fontSize:'12px',fontWeight:'700',color:'#fff',marginTop:'2px'}}>{v}</div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <table className="text-[11px] w-full border-collapse min-w-[1200px]">
+
+                    {/* ── STATS STRIP ── */}
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',background:'#f8fafc',borderBottom:'2px solid #e2e8f0'}}>
+                      {[
+                        {l:'Annual Gross',v:rs(yTot('gross')),color:'#16a34a',bg:'#f0fdf4',border:'#bbf7d0'},
+                        {l:'Total NPS',   v:rs(yTot('nps')), color:'#7c3aed',bg:'#faf5ff',border:'#ddd6fe'},
+                        {l:'Total Deductions',v:rs(yTot('td')),color:'#dc2626',bg:'#fef2f2',border:'#fecaca'},
+                        {l:'Annual Net Pay',v:rs(yTot('net')),color:'#1e3a8a',bg:'#eff6ff',border:'#bfdbfe'},
+                      ].map(s=>(
+                        <div key={s.l} style={{padding:'7px 12px',background:s.bg,borderRight:`1px solid ${s.border}`,textAlign:'center'}}>
+                          <div style={{fontSize:'9px',color:'#64748b',fontWeight:'600',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'2px'}}>{s.l}</div>
+                          <div style={{fontSize:'13px',fontWeight:'900',color:s.color}}>{s.v}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* ── TABLE ── */}
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:'11px'}}>
                       <thead>
-                        <tr className="bg-amber-600 text-white">
-                          {['Month','Basic','DA%','DA Amt','HRA','Transport','Medical','GROSS','NPS/PF','GSLI','Prof.Tax','I.Tax','Tot.Ded','NET PAY'].map(h=>(
-                            <th key={h} className="px-2.5 py-3 text-center font-black whitespace-nowrap border-r border-amber-500/50">{h}</th>
+                        <tr style={{background:'linear-gradient(90deg,#1e3a8a,#1d4ed8)'}}>
+                          {[
+                            {h:'Month',     w:'60px',  align:'center'},
+                            {h:'Basic Pay', w:'72px',  align:'right'},
+                            {h:'DA %',      w:'44px',  align:'center'},
+                            {h:'DA Amt',    w:'68px',  align:'right'},
+                            {h:'HRA',       w:'60px',  align:'right'},
+                            {h:'Transport', w:'72px',  align:'right'},
+                            {h:'Medical',   w:'60px',  align:'right'},
+                            {h:'GROSS',     w:'76px',  align:'right'},
+                            {h:'NPS/PF',    w:'64px',  align:'right'},
+                            {h:'GSLI',      w:'44px',  align:'right'},
+                            {h:'Prof.Tax',  w:'60px',  align:'right'},
+                            {h:'I.Tax',     w:'56px',  align:'right'},
+                            {h:'Tot.Ded',   w:'64px',  align:'right'},
+                            {h:'NET PAY',   w:'76px',  align:'right'},
+                          ].map(({h,w,align})=>(
+                            <th key={h} style={{padding:'7px 6px',color:'#fff',fontWeight:'800',fontSize:'9.5px',
+                              textTransform:'uppercase',letterSpacing:'0.3px',textAlign:align as any,
+                              width:w,borderRight:'1px solid rgba(255,255,255,0.12)',whiteSpace:'nowrap'}}>
+                              {h}
+                            </th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {yearlyData.map((row,i)=>{
                           const setD=(f:string,v:number)=>setManDed(p=>({...p,[row.key]:{...(p[row.key]||{}),[f]:v}}));
+                          const isIncMonth = (emp.incrementMonth==='07'&&row.key.endsWith('-07'))||(emp.incrementMonth==='01'&&row.key.endsWith('-01'));
+                          const rowBg = isIncMonth ? '#fef9c3' : i%2===0 ? '#fff' : '#f8fafc';
                           const ec=(f:string,def:number)=>(
-                            <td key={f} className="px-1 py-1 border-b border-r border-gray-200">
-                              <input type="number" value={manDed[row.key]?.[f]??def} onChange={e=>setD(f,Number(e.target.value))}
-                                className="w-16 px-1.5 py-1 bg-yellow-50 border border-yellow-300 rounded text-xs text-right font-medium focus:outline-none focus:ring-1 focus:ring-amber-400"/>
+                            <td key={f} style={{padding:'2px 3px',borderBottom:'1px solid #e2e8f0',borderRight:'1px solid #f1f5f9',background:rowBg}}>
+                              <input type="number" value={manDed[row.key]?.[f]??def}
+                                onChange={e=>setD(f,Number(e.target.value))}
+                                style={{width:'52px',padding:'2px 4px',background:'#fffbeb',border:'1px solid #fcd34d',
+                                  borderRadius:'3px',fontSize:'10px',textAlign:'right',fontWeight:'500',outline:'none',
+                                  fontFamily:"'Segoe UI',Arial,sans-serif"}}/>
                             </td>
                           );
                           return (
-                            <tr key={row.key} className={`${i%2===0?'bg-white':'bg-amber-50/20'} hover:bg-amber-50/40`}>
-                              <td className="px-2.5 py-2 font-bold text-amber-700 text-center border-b border-r border-gray-200 whitespace-nowrap">{row.label}</td>
-                              <td className="px-2.5 py-2 text-right border-b border-r border-gray-200">{fmt(row.basic)}</td>
-                              <td className="px-2.5 py-2 text-center text-gray-400 border-b border-r border-gray-200">{row.daR}%</td>
-                              <td className="px-2.5 py-2 text-right border-b border-r border-gray-200">{fmt(row.da)}</td>
-                              <td className="px-2.5 py-2 text-right border-b border-r border-gray-200">{fmt(row.hra)}</td>
-                              <td className="px-2.5 py-2 text-right border-b border-r border-gray-200">{fmt(row.transport)}</td>
-                              <td className="px-2.5 py-2 text-right border-b border-r border-gray-200">{fmt(row.ma)}</td>
-                              <td className="px-2.5 py-2 text-right border-b border-r border-gray-200 font-black text-green-700">{fmt(row.gross)}</td>
+                            <tr key={row.key} style={{background:rowBg}}>
+                              {/* Month */}
+                              <td style={{padding:'5px 6px',fontWeight:'800',textAlign:'center',
+                                borderBottom:'1px solid #e2e8f0',borderRight:'1px solid #f1f5f9',whiteSpace:'nowrap',
+                                color: isIncMonth?'#92400e':'#1e3a8a',
+                                background: isIncMonth?'#fef3c7':rowBg,
+                                fontSize:'10.5px',
+                              }}>
+                                {row.label}
+                                {isIncMonth&&<span style={{display:'block',fontSize:'8px',color:'#d97706',fontWeight:'700'}}>↑ Increment</span>}
+                              </td>
+                              {/* Basic */}
+                              <td style={{padding:'5px 6px',textAlign:'right',fontWeight:'700',color:'#1e3a8a',borderBottom:'1px solid #e2e8f0',borderRight:'1px solid #f1f5f9',fontFamily:'monospace',fontSize:'10.5px'}}>{fmt(row.basic)}</td>
+                              {/* DA% */}
+                              <td style={{padding:'5px 6px',textAlign:'center',borderBottom:'1px solid #e2e8f0',borderRight:'1px solid #f1f5f9'}}>
+                                <span style={{background:'#eff6ff',color:'#1d4ed8',padding:'1px 5px',borderRadius:'8px',fontWeight:'700',fontSize:'9.5px'}}>{row.daR}%</span>
+                              </td>
+                              {/* DA Amt */}
+                              <td style={{padding:'5px 6px',textAlign:'right',color:'#374151',borderBottom:'1px solid #e2e8f0',borderRight:'1px solid #f1f5f9',fontFamily:'monospace',fontSize:'10.5px'}}>{fmt(row.da)}</td>
+                              {/* HRA */}
+                              <td style={{padding:'5px 6px',textAlign:'right',color:'#374151',borderBottom:'1px solid #e2e8f0',borderRight:'1px solid #f1f5f9',fontFamily:'monospace',fontSize:'10.5px'}}>{fmt(row.hra)}</td>
+                              {/* Transport */}
+                              <td style={{padding:'5px 6px',textAlign:'right',color:'#374151',borderBottom:'1px solid #e2e8f0',borderRight:'1px solid #f1f5f9',fontFamily:'monospace',fontSize:'10.5px'}}>{fmt(row.transport)}</td>
+                              {/* Medical */}
+                              <td style={{padding:'5px 6px',textAlign:'right',color:'#374151',borderBottom:'1px solid #e2e8f0',borderRight:'1px solid #f1f5f9',fontFamily:'monospace',fontSize:'10.5px'}}>{fmt(row.ma)}</td>
+                              {/* GROSS — highlighted */}
+                              <td style={{padding:'5px 6px',textAlign:'right',fontWeight:'900',
+                                background:'#f0fdf4',
+                                color:'#16a34a',borderBottom:'1px solid #e2e8f0',borderRight:'2px solid #86efac',fontFamily:'monospace',fontSize:'11px'}}>
+                                {fmt(row.gross)}
+                              </td>
+                              {/* Editable deduction cells */}
                               {ec('nps',row.nps)}{ec('gsli',row.gsli)}{ec('pt',row.pt)}{ec('itax',row.itax)}
-                              <td className="px-2.5 py-2 text-right border-b border-r border-gray-200 font-bold text-red-500">{fmt(row.td)}</td>
-                              <td className="px-2.5 py-2 text-right border-b border-gray-200 font-black text-gray-900">{fmt(row.net)}</td>
+                              {/* Total Deductions */}
+                              <td style={{padding:'5px 6px',textAlign:'right',fontWeight:'700',color:'#dc2626',background:'#fff5f5',borderBottom:'1px solid #e2e8f0',borderRight:'1px solid #f1f5f9',fontFamily:'monospace',fontSize:'10.5px'}}>{fmt(row.td)}</td>
+                              {/* NET PAY — most prominent */}
+                              <td style={{padding:'5px 6px',textAlign:'right',fontWeight:'900',
+                                color:'#fff',background:'#1e3a8a',
+                                borderBottom:'1px solid #1d4ed8',fontFamily:'monospace',fontSize:'11px'}}>
+                                {fmt(row.net)}
+                              </td>
                             </tr>
                           );
                         })}
                       </tbody>
                       <tfoot>
-                        <tr className="bg-amber-700 text-white font-black text-xs">
-                          <td className="px-2.5 py-3 text-center">TOTAL</td>
-                          {(['basic','','da','hra','transport','ma','gross','nps','gsli','pt','itax','td','net'] as const).map((k,i)=>(
-                            <td key={i} className="px-2.5 py-3 text-right border-r border-amber-600/50">{k?fmt(yTot(k as any)):''}</td>
-                          ))}
+                        <tr style={{background:'linear-gradient(90deg,#1e3a8a,#1d4ed8)'}}>
+                          <td style={{padding:'8px 6px',color:'#fde68a',fontWeight:'900',fontSize:'11px',textAlign:'center',textTransform:'uppercase',letterSpacing:'0.5px'}}>TOTAL</td>
+                          <td style={{padding:'8px 6px',color:'#fff',fontWeight:'800',textAlign:'right',fontFamily:'monospace'}}>{fmt(yTot('basic'))}</td>
+                          <td style={{padding:'8px 6px',color:'rgba(255,255,255,0.5)',textAlign:'center'}}>—</td>
+                          <td style={{padding:'8px 6px',color:'#fff',fontWeight:'800',textAlign:'right',fontFamily:'monospace'}}>{fmt(yTot('da'))}</td>
+                          <td style={{padding:'8px 6px',color:'#fff',fontWeight:'800',textAlign:'right',fontFamily:'monospace'}}>{fmt(yTot('hra'))}</td>
+                          <td style={{padding:'8px 6px',color:'#fff',fontWeight:'800',textAlign:'right',fontFamily:'monospace'}}>{fmt(yTot('transport'))}</td>
+                          <td style={{padding:'8px 6px',color:'#fff',fontWeight:'800',textAlign:'right',fontFamily:'monospace'}}>{fmt(yTot('ma'))}</td>
+                          <td style={{padding:'8px 6px',color:'#86efac',fontWeight:'900',textAlign:'right',fontFamily:'monospace',fontSize:'11px'}}>{fmt(yTot('gross'))}</td>
+                          <td style={{padding:'8px 6px',color:'#c4b5fd',fontWeight:'800',textAlign:'right',fontFamily:'monospace'}}>{fmt(yTot('nps'))}</td>
+                          <td style={{padding:'8px 6px',color:'#fca5a5',fontWeight:'800',textAlign:'right',fontFamily:'monospace'}}>{fmt(yTot('gsli'))}</td>
+                          <td style={{padding:'8px 6px',color:'#fca5a5',fontWeight:'800',textAlign:'right',fontFamily:'monospace'}}>{fmt(yTot('pt'))}</td>
+                          <td style={{padding:'8px 6px',color:'#fca5a5',fontWeight:'800',textAlign:'right',fontFamily:'monospace'}}>{fmt(yTot('itax'))}</td>
+                          <td style={{padding:'8px 6px',color:'#fca5a5',fontWeight:'800',textAlign:'right',fontFamily:'monospace'}}>{fmt(yTot('td'))}</td>
+                          <td style={{padding:'8px 6px',color:'#fde68a',fontWeight:'900',textAlign:'right',fontFamily:'monospace',fontSize:'12px'}}>{fmt(yTot('net'))}</td>
                         </tr>
                       </tfoot>
                     </table>
-                    <p className="text-[10px] text-gray-400 p-2">✏ Yellow cells are editable — type to override auto-calculated values</p>
+
+                    {/* ── FOOTER ── */}
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',padding:'10px 20px 8px',borderTop:'2px solid #e2e8f0',background:'#f8fafc',gap:'12px'}}>
+                      {[['Accountant',''],['Accountant (Sr.)',''],['Principal',sysConfig.collegeName]].map(([role,sub])=>(
+                        <div key={role} style={{textAlign:'center'}}>
+                          <div style={{borderTop:'1px solid #374151',paddingTop:'4px',marginTop:'20px'}}>
+                            <div style={{fontSize:'11px',fontWeight:'700',color:'#1e3a8a'}}>{role}</div>
+                            {sub&&<div style={{fontSize:'10px',color:'#64748b',marginTop:'2px'}}>{sub}</div>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{textAlign:'center',padding:'6px',background:'#1e3a8a',fontSize:'9px',color:'rgba(255,255,255,0.6)'}}>
+                      © 2026 Pankaj Kumar Prasad · Jharkhand Pay Master Pro v8.0 · Generated on {new Date().toLocaleDateString('en-IN')}
+                    </div>
+
+                    <p style={{fontSize:'10px',color:'#94a3b8',padding:'6px 12px',background:'#fff'}}>✏ Yellow cells are editable — type to override auto-calculated values</p>
                   </div>
                   <NavRow onPrev={goPrev} onNext={goNext}/>
                 </div>
@@ -1890,7 +2334,7 @@ export default function App() {
                   {/* Printable Bill */}
                   <div ref={billRef} style={{background:'#fff',color:'#000',fontFamily:'Arial,sans-serif',padding:'12px'}}>
                     <div style={{textAlign:'center',borderBottom:'2px solid #000',paddingBottom:'7px',marginBottom:'8px'}}>
-                      {sysConfig.logoBase64&&<img src={sysConfig.logoBase64} alt="Logo" style={{height:'35px',objectFit:'contain',marginBottom:'3px'}}/>}
+                      {logoSrc(sysConfig)&&<img src={logoSrc(sysConfig)} alt="Logo" style={{height:'35px',objectFit:'contain',marginBottom:'3px'}}/>}
                       <div style={{fontSize:'14px',fontWeight:'900',textTransform:'uppercase',letterSpacing:'1px'}}>{sysConfig.collegeName}, DHANBAD</div>
                       <div style={{fontSize:'11px',fontWeight:'bold',marginTop:'3px'}}>SALARY BILL OF THE NON-TEACHING STAFF FOR THE MONTH OF {sbCfg.month.toUpperCase()} {sbCfg.year} (As per 7<sup>th</sup> pay scale)</div>
                     </div>
@@ -2938,12 +3382,20 @@ export default function App() {
                         <h3 className="text-xs font-black text-slate-500 uppercase tracking-wider mb-4">Official Logo Upload</h3>
                         <div className="flex items-center gap-4">
                           <div className="w-20 h-20 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center bg-white overflow-hidden shrink-0">
-                            {sysConfig.logoBase64?<img src={sysConfig.logoBase64} alt="Logo" className="w-full h-full object-contain p-1"/>:<Building2 size={24} className="text-slate-300"/>}
+                            {logoSrc(sysConfig)?<img src={logoSrc(sysConfig)} alt="Logo" className="w-full h-full object-contain p-1"/>:<Building2 size={24} className="text-slate-300"/>}
                           </div>
                           <div>
-                            <input type="file" accept="image/png,image/jpeg" id="logo-upload" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=ev=>setSysConfig(p=>({...p,logoBase64:ev.target?.result as string}));r.readAsDataURL(f);}}}/>
-                            <label htmlFor="logo-upload" className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-xl cursor-pointer hover:bg-slate-700 shadow mb-2"><Upload size={13}/> Upload Logo</label>
-                            {sysConfig.logoBase64&&<button onClick={()=>setSysConfig(p=>({...p,logoBase64:''}))} className="block text-[10px] font-bold text-red-500 hover:text-red-700 mt-1">Remove Logo</button>}
+                            <input type="file" accept="image/png,image/jpeg" id="logo-upload" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f){const r=new FileReader();r.onload=ev=>setSysConfig(p=>({...p,logoBase64:ev.target?.result as string,logoPath:''}));r.readAsDataURL(f);}}}/>
+                            <label htmlFor="logo-upload" className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-xl cursor-pointer hover:bg-slate-700 shadow mb-2"><Upload size={13}/> Upload (temp)</label>
+                            <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800">
+                              <p className="font-black mb-1">✅ Permanent Logo (Recommended)</p>
+                              <p className="text-blue-600">Logo file ko <code className="bg-blue-100 px-1 rounded">public/logo.png</code> mein save karo</p>
+                              <p className="text-blue-600 mt-0.5">Automatic load hoga — koi upload nahi chahiye</p>
+                              <button onClick={()=>setSysConfig(p=>({...p,logoPath:'/logo.png',logoBase64:''}))} className="mt-2 flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700">
+                                ✅ Use /public/logo.png
+                              </button>
+                            </div>
+                            {logoSrc(sysConfig)&&<button onClick={()=>setSysConfig(p=>({...p,logoBase64:'',logoPath:''}))} className="block text-[10px] font-bold text-red-500 hover:text-red-700 mt-1">Remove Logo</button>}
                           </div>
                         </div>
                       </div>
@@ -2951,14 +3403,14 @@ export default function App() {
                         <h3 className="text-xs font-black text-red-600 uppercase tracking-wider mb-3">Danger Zone</h3>
                         <div className="flex gap-3">
                           <button onClick={exportAllProfiles} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl text-xs font-bold hover:bg-green-700"><Download size={12}/> Backup All Data</button>
-                          <button onClick={()=>{if(confirm('Delete ALL profiles? This cannot be undone!')){setProfiles([BLANK_PROFILE(uid())]);showToast('All profiles deleted','error');}}} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700"><Trash2 size={12}/> Delete All Profiles</button>
+                          <button onClick={()=>{if(confirm('Delete ALL profiles? This cannot be undone!')){deleteAllProfiles().then(()=>showToast('All profiles deleted','error'));}}} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700"><Trash2 size={12}/> Delete All Profiles</button>
                         </div>
                       </div>
                     </div>
                     <div className="sticky top-24 p-6 bg-white border-2 border-slate-200 rounded-2xl shadow-lg">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-5 text-center">Live Document Header Preview</p>
                       <div className="border-b-2 border-double border-black pb-4 text-center flex flex-col items-center">
-                        {sysConfig.logoBase64&&<img src={sysConfig.logoBase64} alt="Logo" className="h-16 mb-3 object-contain"/>}
+                        {logoSrc(sysConfig)&&<img src={logoSrc(sysConfig)} alt="Logo" className="h-16 mb-3 object-contain"/>}
                         <h1 className="text-lg font-black uppercase tracking-wider text-black">{sysConfig.collegeName}</h1>
                         <p className="text-xs font-bold text-gray-700 mt-1">{sysConfig.address}</p>
                         {sysConfig.affiliatedTo&&<p className="text-[10px] font-medium text-gray-500 mt-0.5">Affiliated to {sysConfig.affiliatedTo}</p>}
