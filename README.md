@@ -303,7 +303,7 @@ Total Monthly: 24% of (Basic + DA)
 Guru Nanak College, Bhuda, Dhanbad, Jharkhand — 826001
 
 [![GitHub](https://img.shields.io/badge/GitHub-YOUR__GITHUB__USERNAME-black?style=flat-square&logo=github)](https://github.com/pankajkumargnc)
-[![Website](https://img.shields.io/badge/Website-YOUR__WEBSITE__URL-blue?style=flat-square&logo=google-chrome)](https://https://github.com/pankajkumargnc)
+[![Website](https://img.shields.io/badge/Website-YOUR__WEBSITE__URL-blue?style=flat-square&logo=google-chrome)](https://pankajkumargnc.github.io/Jharkhand-Pay-Master-Pro/)
 
 ---
 
