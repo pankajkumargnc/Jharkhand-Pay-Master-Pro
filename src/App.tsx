@@ -221,7 +221,7 @@ const uid = () => Math.random().toString(36).slice(2,10);
 
 // PERMANENT LOGO — reads from /public/logo.png
 // Vite serves public/ folder at root. BASE_URL handles subdirectory deploys.
-const logoSrc = (_cfg?: any) => `${(import.meta as any).env.BASE_URL}logo.png`;
+const logoSrc = (_cfg?: any) => `${import.meta.env.BASE_URL}logo.png`;
 const rnd = (n:number) => Math.round(n);
 const fmt = (n:number) => Math.round(n).toLocaleString('en-IN');
 const rs  = (n:number) => `₹${fmt(n)}`;
@@ -522,7 +522,7 @@ const NavRow = ({onPrev,onNext,showNext=true,extras}:{onPrev?:()=>void,onNext?:(
 // ── Logo header component — handles load/error gracefully ──────
 function LogoHeader() {
   const [ok, setOk] = useState(true);
-  const src = `${(import.meta as any).env.BASE_URL}logo.png`;
+  const src = `${import.meta.env.BASE_URL}logo.png`;
   if (!ok) return (
     <div className="h-10 w-10 bg-gradient-to-br from-green-600 to-green-700 rounded-lg flex items-center justify-center shadow shrink-0">
       <Calculator size={16} className="text-white"/>
@@ -1405,7 +1405,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             {/* Logout button */}
-            <button onClick={()=>{ import('./firebase').then(({auth})=>{ import('firebase/auth').then(({signOut})=>signOut(auth)); }); }} title={user?.email||'Logout'} className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-100 hover:bg-red-50 hover:text-red-600 text-gray-500 rounded-lg text-xs font-bold transition-colors">
+            <button onClick={()=>signOut(auth)} title={user?.email||'Logout'} className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-100 hover:bg-red-50 hover:text-red-600 text-gray-500 rounded-lg text-xs font-bold transition-colors">
               👤 {user?.email?.split('@')[0]||'User'} <span className="opacity-40 ml-0.5">✕</span>
             </button>
             {/* Profile Quick Switcher */}
