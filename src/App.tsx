@@ -513,7 +513,64 @@ export default function App() {
   // Multi-profile state
   const [profiles, setProfiles] = useState<EmployeeData[]>(()=>{
     try{ const s=localStorage.getItem('gnc_profiles_v8'); if(s) return JSON.parse(s); } catch(e){}
-    return [BLANK_PROFILE(uid(),{name:'Sri Sadhan Kumar Mishra',salutation:'Sri.',designation:'Assistant (UDC)',college:'Guru Nanak College',panNumber:'AKKPM5534D',dateOfJoining:'02.05.2011',dateOfBirth:'15.08.1985',payLevel:6,basicPay7th:52000,daRate:53,hraCategory:'Y',bandPayOld:15600,gradePayOld:4200,licDeduction:5772,annualLIC:69260,annualPPF:100000,homeLoanPrincipal:83832,homeLoanInterest:180743,mediclaim:31191,applyNPS:true,applyGSLI:true,applyLIC:true,applyIT:true,category:'non-teaching',color:'#2563eb',isStarred:true,additionalIncome1Label:'IGNOU Remuneration',additionalIncome1:27720,additionalIncome2Label:'BCA Remuneration',additionalIncome2:12000})];
+    return [BLANK_PROFILE(uid(),{
+      name:'Demo Employee',
+      salutation:'Sri.',
+      designation:'Lower Division Clerk',
+      department:'Office',
+      college:'Your College Name',
+      panNumber:'',
+      pranNumber:'',
+      bankAccount:'',
+      ifscCode:'',
+      dateOfJoining:'',
+      dateOfBirth:'',
+      payLevel:2,
+      basicPay7th:19900,
+      daRate:55,
+      hraCategory:'Y',
+      medicalAllowance:1000,
+      transportAllowance:1800,
+      washingAllowance:0,
+      ceaChildren:0,
+      hostelChildren:0,
+      bandPayOld:5200,
+      gradePayOld:1900,
+      applyNPS:true,
+      npsEmployee:10,
+      npsEmployer:14,
+      applyGSLI:true,
+      gsliContribution:60,
+      applyPT:false,
+      professionalTax:0,
+      applyLIC:false,
+      licDeduction:0,
+      annualLIC:0,
+      annualPPF:0,
+      homeLoanPrincipal:0,
+      homeLoanInterest:0,
+      mediclaim:0,
+      npsVoluntary:0,
+      applyIT:false,
+      taxRegime:'new',
+      applySociety:false,
+      societyDeduction:0,
+      additionalIncome1Label:'Other Income',
+      additionalIncome1:0,
+      additionalIncome2Label:'Arrear Income',
+      additionalIncome2:0,
+      incrementMonth:'07',
+      financialYear:'2024-25',
+      fitmentFactor8th:1.92,
+      salaryMonth:'March',
+      salaryYear:'2026',
+      serviceYears:33,
+      earnedLeaves:0,
+      category:'non-teaching',
+      isStarred:false,
+      color:'#2563eb',
+      notes:'Demo profile — Fill in actual employee details from Edit Profile tab.',
+    })];
   });
   useEffect(()=>{ localStorage.setItem('gnc_profiles_v8',JSON.stringify(profiles)); },[profiles]);
 
@@ -699,11 +756,18 @@ export default function App() {
   };
 
   const exportAllProfiles = () => {
-    const ws=XLSX.utils.json_to_sheet(profiles);
-    const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,ws,'Profiles');
-    XLSX.writeFile(wb,`All_Profiles_${sysConfig.collegeName}.xlsx`);
-    showToast('All profiles exported to Excel','success');
+    const hdrs = ['Name','Salutation','Designation','Department','College','PAN','DOJ','DOB','Level','Basic Pay','DA%','HRA','Category','Notes'];
+    exportXLSX({
+      filename:`All_Profiles_${sysConfig.collegeName.replace(/\s+/g,'_')}`,
+      sheets:[{
+        name:'Employee Profiles',
+        title:`EMPLOYEE PROFILES — ${sysConfig.collegeName}`,
+        subtitle:`Total Employees: ${profiles.length} | Exported on ${new Date().toLocaleDateString('en-IN')}`,
+        headers:hdrs,
+        rows:profiles.map(p=>[p.name,p.salutation,p.designation,p.department,p.college,p.panNumber,p.dateOfJoining,p.dateOfBirth,`Level ${p.payLevel}`,p.basicPay7th,p.daRate+'%',p.hraCategory,p.category,p.notes||'']),
+        headerColor:'1A3C5E', altColor:'EBF5FB',
+      }]
+    });
   };
 
   const applyDesig = (d:string) => {
@@ -748,14 +812,137 @@ export default function App() {
 
   const sbCalc=(sb:SBEmployee)=>{const b=sb.basicOn2024,da=pct(b,sbCfg.da),hra=pct(b,sbCfg.hra),ta=sbCfg.ta+pct(sbCfg.ta,sbCfg.da),pf=pct(b,10);return {da,hra,ma:sbCfg.ma,ta,pf,gross:b+da+hra+sbCfg.ma+ta+pf};};
 
-  const exportCSV=(rows:any[][],fn:string)=>{const csv=rows.map(r=>r.map(c=>typeof c==='string'&&c.includes(',')?`"${c}"`:c).join(',')).join('\n'); const a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv); a.download=fn; a.click();};
+  // ── Premium Excel Export with styled theme ──────────────────────
+  const exportXLSX = (data: {
+    sheets: {
+      name: string;
+      title: string;
+      subtitle?: string;
+      headers: string[];
+      rows: any[][];
+      totals?: any[];
+      headerColor?: string;
+      altColor?: string;
+    }[];
+    filename: string;
+  }) => {
+    const wb = XLSX.utils.book_new();
 
-  const exportYearly=()=>exportCSV([['YEARLY SALARY SUMMARY'],[`Employee: ${fullName}  FY: ${yearlyFY}`],[],['Month','Basic','DA%','DA','HRA','Transport','MA','GROSS','NPS','PT','Total Ded','NET'],
-    ...yearlyData.map(r=>[r.label,r.basic,r.daR+'%',r.da,r.hra,r.transport,r.ma,r.gross,r.nps,r.pt,r.td,r.net]),
-    [],['TOTAL','','',yTot('da'),yTot('hra'),yTot('transport'),yTot('ma'),yTot('gross'),yTot('nps'),yTot('pt'),yTot('td'),yTot('net')]],`Yearly_${emp.name}_${yearlyFY}.csv`);
-  const exportArrears=()=>exportCSV([['ARREAR STATEMENT'],[`Employee: ${fullName}`],[],['Month','Basic','Act.DA%','Paid.DA%','DA Act','DA Paid','HRA','TA','MA','Gross Due','Gross Paid','NPS Act','NPS Paid','PT','Net Due','Net Paid','ARREAR'],
-    ...arrRows.map(r=>[r.key,r.basic,r.actDA+'%',r.pDA_r+'%',r.da,r.pDA,r.hra,r.ta,r.ma,r.gross,r.pGross,r.nps,r.pNps,r.pt,r.net,r.pNet,r.arrear]),
-    [],[],['TOTAL ARREAR','','','','','','','','','','','','','','','',arrRows.reduce((s,r)=>s+r.arrear,0)]],`Arrears_${emp.name}.csv`);
+    data.sheets.forEach(sheet => {
+      const aoa: any[][] = [];
+
+      // Title rows
+      aoa.push([sheet.title]);
+      if (sheet.subtitle) aoa.push([sheet.subtitle]);
+      aoa.push([`Generated: ${new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })} | ${sysConfig.collegeName}`]);
+      aoa.push([]); // blank row
+      aoa.push(sheet.headers);
+      sheet.rows.forEach(r => aoa.push(r));
+      if (sheet.totals) { aoa.push([]); aoa.push(sheet.totals); }
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+      // Column widths — auto-fit based on content
+      const colWidths = sheet.headers.map((h, ci) => {
+        const allVals = [h, ...sheet.rows.map(r => String(r[ci] ?? ''))];
+        const maxLen = Math.max(...allVals.map(v => String(v).length));
+        return { wch: Math.min(Math.max(maxLen + 2, 10), 30) };
+      });
+      ws['!cols'] = colWidths;
+
+      // Row heights
+      const rowHeights: { hpx: number }[] = [];
+      aoa.forEach((_, i) => rowHeights.push({ hpx: i < 4 ? 20 : i === 4 ? 22 : 18 }));
+      ws['!rows'] = rowHeights;
+
+      // Merge title cells
+      const totalCols = sheet.headers.length;
+      ws['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: totalCols - 1 } },
+        { s: { r: 2, c: 0 }, e: { r: 2, c: totalCols - 1 } },
+      ];
+
+      // Cell styles (via SheetJS style extension pattern)
+      const hdrColor = (sheet.headerColor || '1F3864').replace('#', '');
+      const altColor = (sheet.altColor   || 'EBF5FB').replace('#', '');
+
+      const applyStyle = (cellRef: string, style: any) => {
+        if (!ws[cellRef]) ws[cellRef] = { v: '', t: 's' };
+        ws[cellRef].s = style;
+      };
+
+      // Title style
+      const titleStyle = { font: { bold: true, sz: 14, color: { rgb: 'FFFFFF' }, name: 'Arial' }, fill: { fgColor: { rgb: hdrColor } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: {} };
+      const subStyle   = { font: { bold: true, sz: 10, color: { rgb: 'FFFFFF' }, name: 'Arial' }, fill: { fgColor: { rgb: '2E75B6' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+      const metaStyle  = { font: { italic: true, sz: 9, color: { rgb: '595959' }, name: 'Arial' }, fill: { fgColor: { rgb: 'F2F2F2' } }, alignment: { horizontal: 'center' } };
+      const hdrStyle   = { font: { bold: true, sz: 10, color: { rgb: 'FFFFFF' }, name: 'Arial' }, fill: { fgColor: { rgb: hdrColor } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: { bottom: { style: 'medium', color: { rgb: 'FFFFFF' } } } };
+      const numStyle   = { font: { sz: 10, name: 'Arial Narrow' }, numFmt: '#,##0', alignment: { horizontal: 'right' } };
+      const totStyle   = { font: { bold: true, sz: 11, color: { rgb: 'FFFFFF' }, name: 'Arial' }, fill: { fgColor: { rgb: '1F5C2E' } }, alignment: { horizontal: 'right' }, numFmt: '#,##0' };
+
+      // Apply title rows
+      const titleCells = ['A1', 'A2', 'A3'];
+      const titleStyles = [titleStyle, subStyle, metaStyle];
+      titleCells.forEach((c, i) => applyStyle(c, titleStyles[i]));
+
+      // Apply header row (row index 4)
+      sheet.headers.forEach((_, ci) => {
+        const cellRef = XLSX.utils.encode_cell({ r: 4, c: ci });
+        applyStyle(cellRef, hdrStyle);
+      });
+
+      // Apply data rows
+      sheet.rows.forEach((row, ri) => {
+        const isAlt = ri % 2 === 1;
+        const rowBg = isAlt ? altColor : 'FFFFFF';
+        row.forEach((val, ci) => {
+          const cellRef = XLSX.utils.encode_cell({ r: 5 + ri, c: ci });
+          const isNum = typeof val === 'number';
+          const baseStyle = { font: { sz: 10, name: 'Arial Narrow' }, fill: { fgColor: { rgb: rowBg } }, border: { bottom: { style: 'thin', color: { rgb: 'D9D9D9' } } } };
+          applyStyle(cellRef, isNum ? { ...baseStyle, ...numStyle, fill: baseStyle.fill } : { ...baseStyle, alignment: { horizontal: ci === 0 ? 'center' : 'left' } });
+        });
+      });
+
+      // Apply totals row
+      if (sheet.totals) {
+        const totRowIdx = 5 + sheet.rows.length + 1;
+        sheet.totals.forEach((val, ci) => {
+          const cellRef = XLSX.utils.encode_cell({ r: totRowIdx, c: ci });
+          applyStyle(cellRef, totStyle);
+        });
+      }
+
+      XLSX.utils.book_append_sheet(wb, ws, sheet.name.slice(0, 31));
+    });
+
+    XLSX.writeFile(wb, `${data.filename}.xlsx`);
+    showToast(`Excel exported: ${data.filename}.xlsx`, 'success');
+  };
+
+  const exportYearly=()=>exportXLSX({
+    filename:`Yearly_Salary_${emp.name.replace(/\s+/g,'_')}_${yearlyFY}`,
+    sheets:[{
+      name:'Yearly Summary',
+      title:`YEARLY SALARY SUMMARY — FY ${yearlyFY}`,
+      subtitle:`${fullName} | ${emp.designation} | ${emp.college} | Level-${emp.payLevel}`,
+      headers:['Month','Basic Pay','DA %','DA Amt','HRA','Transport','Medical','GROSS SALARY','NPS/PF','Prof Tax','Total Ded.','NET PAY'],
+      rows:yearlyData.map(r=>[r.label,r.basic,r.daR+'%',r.da,r.hra,r.transport,r.ma,r.gross,r.nps,r.pt,r.td,r.net]),
+      totals:['TOTAL','','','',yTot('hra'),yTot('transport'),yTot('ma'),yTot('gross'),yTot('nps'),yTot('pt'),yTot('td'),yTot('net')],
+      headerColor:'1F3864', altColor:'EBF5FB',
+    }]
+  });
+  const exportArrears=()=>exportXLSX({
+    filename:`Salary_Arrear_${emp.name.replace(/\s+/g,'_')}`,
+    sheets:[{
+      name:'Salary Arrear',
+      title:'SALARY ARREAR STATEMENT',
+      subtitle:`${fullName} | Level-${arrCfg.level} | Period: ${arrCfg.startMonth} to ${arrCfg.endMonth}`,
+      headers:['Month','Basic','Act.DA%','Paid DA%','DA Actual','DA Paid','HRA','Transport','Medical','Gross Due','Gross Paid','NPS Act.','NPS Paid','Prof.Tax','Net Due','Net Paid','ARREAR'],
+      rows:arrRows.map(r=>[r.key,r.basic,r.actDA+'%',r.pDA_r+'%',r.da,r.pDA,r.hra,r.ta,r.ma,r.gross,r.pGross,r.nps,r.pNps,r.pt,r.net,r.pNet,r.arrear]),
+      totals:['TOTAL','','','','','','','','',arrRows.reduce((s,r)=>s+r.gross,0),arrRows.reduce((s,r)=>s+r.pGross,0),arrRows.reduce((s,r)=>s+r.nps,0),arrRows.reduce((s,r)=>s+r.pNps,0),arrRows.reduce((s,r)=>s+r.pt,0),arrRows.reduce((s,r)=>s+r.net,0),arrRows.reduce((s,r)=>s+r.pNet,0),arrRows.reduce((s,r)=>s+r.arrear,0)],
+      headerColor:'7B0000', altColor:'FFF5F5',
+    }]
+  });
 
   // ══════════════════════════════════════════════════════════════════
   // SALARY SLIP COMPONENT
@@ -862,13 +1049,13 @@ export default function App() {
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-gradient-to-br from-green-600 to-green-700 rounded-lg flex items-center justify-center shadow"><Calculator size={15} className="text-white"/></div>
             <div className="flex items-baseline gap-2">
-              <span className="text-sm font-black text-gray-900 tracking-tight">{sysConfig.collegeName||'Pay Master Pro'}</span>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full">v8.0 Ultra Pro</span>
+              <span className="text-xs sm:text-sm font-black text-gray-900 tracking-tight truncate max-w-[120px] sm:max-w-none">{sysConfig.collegeName||'Pay Master Pro'}</span>
+              <span className="hidden sm:inline text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full">v8.0</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {/* Profile Quick Switcher */}
-            <div className="hidden md:flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-xl border border-gray-200">
+            <div className="hidden lg:flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-xl border border-gray-200">
               {profiles.slice(0,5).map(p=>(
                 <button key={p.id} onClick={()=>{setActiveId(p.id);setTab('profile');}} title={p.name}
                   className={`w-7 h-7 rounded-full text-white text-[10px] font-black transition-all flex items-center justify-center ${p.id===activeId?'ring-2 ring-offset-1 ring-gray-400 scale-110':''}`}
@@ -894,7 +1081,7 @@ export default function App() {
       window.location.reload();
     },800);
   }
-}} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-500 hover:text-red-700 border border-red-200 bg-red-50 rounded-xl transition-all"><RefreshCw size={11}/> Reset</button>
+}} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-500 hover:text-red-700 border border-red-200 bg-red-50 rounded-xl transition-all"><RefreshCw size={11}/><span className="hidden sm:inline"> Reset</span></button>
           </div>
         </div>
       </header>
@@ -931,9 +1118,9 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <div className="max-w-screen-2xl mx-auto px-4 py-4 flex gap-4">
+      <div className="max-w-screen-2xl mx-auto px-2 sm:px-4 py-2 sm:py-4 flex flex-col sm:flex-row gap-3 sm:gap-4">
         {/* SIDEBAR */}
-        <aside className="w-48 shrink-0">
+        <aside className="hidden sm:block w-44 shrink-0">
           <div className="sticky top-20 space-y-4">
             {navGroups.map(g=>(
               <div key={g.g}>
@@ -971,18 +1158,18 @@ export default function App() {
         </aside>
 
         {/* MAIN CONTENT */}
-        <main className="flex-1 min-w-0">
+        <main className="flex-1 min-w-0 w-full">
           <AnimatePresence mode="wait">
             <motion.div key={tab} initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-8}} transition={{duration:0.14}}
-              className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden min-h-[82vh]">
+              className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden min-h-[70vh]">
 
               {/* ══════ DASHBOARD ══════ */}
               {tab==='dashboard'&&(
-                <div className="p-6">
+                <div className="p-4 sm:p-5">
                   <SectionHead title="Dashboard" subtitle={`${sysConfig.collegeName} · ${dashStats.count} employee profiles`} icon={LayoutDashboard} accent="#16a34a"/>
                   
                   {/* Stats row */}
-                  <div className="grid grid-cols-4 gap-4 mb-6">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
                     <StatCard label="Total Employees" value={dashStats.count+' Profiles'} icon={Users} color="#2563eb" sub={`${dashStats.starred} starred`}/>
                     <StatCard label="Total Monthly Gross" value={dashStats.totalGross} icon={TrendingUp} color="#16a34a" sub="All profiles combined"/>
                     <StatCard label="Total Net Payable" value={dashStats.totalNet} icon={IndianRupee} color="#059669" sub="After deductions"/>
@@ -990,7 +1177,7 @@ export default function App() {
                   </div>
 
                   {/* Charts + Recent */}
-                  <div className="grid grid-cols-3 gap-5 mb-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
                     <Card className="p-5">
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-4">Category Distribution</p>
                       <div className="flex items-center gap-4">
@@ -1070,10 +1257,10 @@ export default function App() {
 
               {/* ══════ PROFILES ══════ */}
               {tab==='profiles'&&(
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-5">
+                <div className="p-4 sm:p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-5 gap-3">
                     <SectionHead title="Profile Manager" subtitle={`${profiles.length} employees · Multi-profile system`} icon={Users} accent="#2563eb"/>
-                    <div className="flex items-center gap-2 mt-[-0.5rem]">
+                    <div className="flex flex-wrap items-center gap-2">
                       <input type="file" accept=".xlsx,.xls" id="import-all" className="hidden" onChange={importAllProfiles}/>
                       <label htmlFor="import-all" className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold cursor-pointer hover:bg-blue-100"><Upload size={12}/> Import Excel</label>
                       <button onClick={exportAllProfiles} className="flex items-center gap-1.5 px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-xl text-xs font-bold hover:bg-green-100"><Download size={12}/> Export All</button>
@@ -1108,7 +1295,7 @@ export default function App() {
                   )}
 
                   {profileView==='grid'?(
-                    <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                       {filteredProfiles.map(p=>{
                         const b=p.basicPay7th,da=pct(b,p.daRate),hra=pct(b,HRA_RATES[p.hraCategory]*100),gross=b+da+hra+p.transportAllowance+p.medicalAllowance;
                         const nps=p.applyNPS?pct(b+da,p.npsEmployee):0,gsli=p.applyGSLI?getGSLI(p.payLevel):p.gsliContribution,pt=p.applyPT?p.professionalTax:0,net=gross-nps-gsli-pt;
@@ -1186,10 +1373,10 @@ export default function App() {
 
               {/* ══════ EDIT PROFILE ══════ */}
               {tab==='profile'&&(
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-5">
+                <div className="p-4 sm:p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-5 gap-3">
                     <SectionHead title={emp.name?`Editing: ${fullName}`:'New Employee Profile'} subtitle="Auto-saves · Select designation for smart auto-fill" icon={User} accent="#7c3aed"/>
-                    <div className="flex items-center gap-2 mt-[-0.5rem]">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button onClick={()=>duplicateProfile(emp.id)} className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold hover:bg-blue-100"><Copy size={12}/> Duplicate</button>
                       <button onClick={()=>{setEmp(BLANK_PROFILE(emp.id,{college:emp.college,color:emp.color}));showToast('Profile reset','info');}} className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-red-500 hover:text-red-700 border border-red-200 bg-red-50 rounded-xl"><RotateCcw size={11}/> Reset</button>
                     </div>
@@ -1209,7 +1396,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-4 mb-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
                     <div><Lbl c="Salutation"/><TSel value={emp.salutation} onChange={setE('salutation')} options={SALUTATIONS}/></div>
                     <div className="col-span-2"><Lbl c="Full Name"/><TIn value={emp.name} onChange={setE('name')} placeholder="Employee Full Name"/></div>
                     <div><Lbl c="Designation (Auto-fills Pay)"/><TSel value={emp.designation} onChange={applyDesig} grouped={DESIG_GROUPS}/></div>
@@ -1235,7 +1422,7 @@ export default function App() {
 
                   <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl mb-5">
                     <p className="text-[11px] font-black text-blue-600 uppercase tracking-widest mb-4">Pay Structure (7th CPC)</p>
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                       <div><Lbl c="Pay Level"/><TSel value={emp.payLevel} onChange={(v:string)=>applyLevel(Number(v))} options={Object.keys(PAY_MATRIX).map(l=>({value:Number(l),label:`Level ${l} (GP: ₹${({1:1800,2:1900,3:2000,4:2400,5:2800,6:4200,7:4600,8:4800,9:5400,10:5400,11:6600,12:7600,13:8700,14:8900} as any)[l]})`}))}/></div>
                       <div><Lbl c="Current Basic Pay"/><TSel value={emp.basicPay7th} onChange={(v:string)=>setEmp((p:EmployeeData)=>({...p,basicPay7th:Number(v)}))} options={(PAY_MATRIX[emp.payLevel]||[]).map((v,i)=>({value:v,label:`Cell ${i+1} — ${rs(v)}`}))}/></div>
                       <div>
@@ -1264,7 +1451,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-5 mb-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
                     <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl">
                       <p className="text-[11px] font-black text-purple-600 uppercase tracking-widest mb-4">Deductions</p>
                       <div className="space-y-3">
@@ -1307,7 +1494,7 @@ export default function App() {
 
                   <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl mb-5">
                     <p className="text-[11px] font-black text-gray-500 uppercase tracking-widest mb-4">Additional Income & 8th Pay</p>
-                    <div className="grid grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                       <div><Lbl c="Additional Income 1 (Label)"/><TIn value={emp.additionalIncome1Label} onChange={setE('additionalIncome1Label')}/></div>
                       <div><Lbl c="Amount (₹/year)"/><TIn type="number" value={emp.additionalIncome1} onChange={setE('additionalIncome1')}/></div>
                       <div><Lbl c="Additional Income 2 (Label)"/><TIn value={emp.additionalIncome2Label} onChange={setE('additionalIncome2Label')}/></div>
@@ -1329,7 +1516,7 @@ export default function App() {
 
               {/* ══════ FIXATION ══════ */}
               {tab==='fixation'&&(
-                <div className="p-6">
+                <div className="p-4 sm:p-5">
                   <SectionHead title="7th Pay Commission Fixation" subtitle={`${fullName} · 6th → 7th CPC | Fitment Factor: 2.57 | FR 22(I)(a)(1)`} icon={FileText} accent="#0891b2"/>
                   <div className="grid grid-cols-3 gap-4 mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
                     <div><Lbl c="Band Pay (6th CPC)"/><select value={Object.entries({PB1:[5200,9299],PB2:[9300,15599],PB3:[15600,39100],PB4:[37400,67000]}).find(([,r])=>emp.bandPayOld>=r[0]&&emp.bandPayOld<=r[1])?.[0]||'PB2'} onChange={e=>{const defVals:any={PB1:5200,PB2:9300,PB3:15600,PB4:37400};setEmp((p:EmployeeData)=>({...p,bandPayOld:defVals[e.target.value]||9300}));}} className="w-full px-3 py-2 bg-white border border-blue-300 rounded-lg text-sm font-medium focus:outline-none mb-2"><option value="PB1">PB-1 (₹5200-20200)</option><option value="PB2">PB-2 (₹9300-34800)</option><option value="PB3">PB-3 (₹15600-39100)</option><option value="PB4">PB-4 (₹37400-67000)</option></select><Lbl c="Band Pay Amount (₹)"/><TIn type="number" value={emp.bandPayOld} onChange={setE('bandPayOld')}/></div>
@@ -1368,14 +1555,14 @@ export default function App() {
 
               {/* ══════ MACP ══════ */}
               {tab==='macp'&&(
-                <div className="p-6">
+                <div className="p-4 sm:p-5">
                   <SectionHead title="MACP Progression Calculator" subtitle="Modified Assured Career Progression — Financial upgradation at 10, 20, 30 years" icon={Milestone} accent="#8b5cf6"/>
                   <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl mb-6">
                     <p className="text-sm font-bold text-purple-800 mb-1">MACP Rule for Non-Teaching Staff:</p>
                     <p className="text-xs text-purple-600">If an employee is not promoted by regular DPC, they get automatic financial upgradation to next higher Pay Level after 10, 20, and 30 years of continuous regular service. The upgraded pay is fixed in the next level at the cell equal to or next higher than the current basic.</p>
                   </div>
                   <div className="mb-6 p-4 bg-white border border-gray-200 rounded-xl">
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                       <div><Lbl c="Starting Pay Level"/><TSel value={emp.payLevel} onChange={(v:string)=>applyLevel(Number(v))} options={Object.keys(PAY_MATRIX).map(l=>({value:Number(l),label:`Level ${l}`}))}/></div>
                       <div><Lbl c="Starting Basic Pay"/><TSel value={emp.basicPay7th} onChange={(v:string)=>setEmp((p:EmployeeData)=>({...p,basicPay7th:Number(v)}))} options={(PAY_MATRIX[emp.payLevel]||[]).map((v,i)=>({value:v,label:`Cell ${i+1} — ${rs(v)}`}))}/></div>
                       <div><Lbl c="Joining Date"/><TIn value={emp.dateOfJoining} onChange={setE('dateOfJoining')} placeholder="For tenure calculation"/></div>
@@ -1406,8 +1593,8 @@ export default function App() {
 
               {/* ══════ MONTHLY SALARY ══════ */}
               {tab==='salary'&&(
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-5">
+                <div className="p-4 sm:p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-5 gap-3">
                     <SectionHead title="Monthly Salary Breakdown" subtitle={`${fullName} · Level-${emp.payLevel} · 7th & 8th Pay`} icon={IndianRupee} accent="#059669"/>
                   </div>
                   <div className="flex items-center gap-3 mb-5 p-3 bg-cyan-50 border border-cyan-200 rounded-xl flex-wrap">
@@ -1418,7 +1605,7 @@ export default function App() {
                     <div className="flex-1"/>
                     <button onClick={()=>setShowSlip(true)} className="flex items-center gap-2 px-5 py-2.5 bg-cyan-600 text-white rounded-xl text-sm font-bold hover:bg-cyan-700 shadow"><FileText size={14}/> View & Print Slip</button>
                   </div>
-                  <div className="grid grid-cols-2 gap-6 mb-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     {[{title:'7th Pay',basic:s7.b,da:s7.da,daR:emp.daRate,hra:s7.hra,hraR:HRA_RATES[emp.hraCategory]*100,ta:s7.ta+s7.taDA,ma:s7.ma,wash:s7.wash,cea:s7.cea,hostel:s7.hostel,gross:s7.gross,npsEmp:s7.npsEmp,npsEr:s7.npsEr,gsli:s7.gsli,pt:s7.pt,lic:s7.lic,soc:s7.soc,it:s7.monthIT,td:s7.td,net:s7.net,col:'#059669'},
                      {title:'8th Pay (Projected)',basic:s7.basic8,da:0,daR:0,hra:pct(s7.basic8,HRA_RATES[emp.hraCategory]*100),hraR:HRA_RATES[emp.hraCategory]*100,ta:emp.transportAllowance,ma:emp.medicalAllowance,wash:0,cea:s7.cea,hostel:s7.hostel,gross:s7.basic8+pct(s7.basic8,HRA_RATES[emp.hraCategory]*100)+emp.transportAllowance+emp.medicalAllowance+s7.cea+s7.hostel,npsEmp:pct(s7.basic8,emp.npsEmployee),npsEr:pct(s7.basic8,emp.npsEmployer),gsli:s7.gsli,pt:s7.pt,lic:s7.lic,soc:s7.soc,it:0,td:pct(s7.basic8,emp.npsEmployee)+s7.gsli+s7.pt+s7.lic+s7.soc,net:s7.basic8+pct(s7.basic8,HRA_RATES[emp.hraCategory]*100)+emp.transportAllowance+emp.medicalAllowance+s7.cea+s7.hostel-pct(s7.basic8,emp.npsEmployee)-s7.gsli-s7.pt-s7.lic-s7.soc,col:'#d97706'}].map(p=>(
                       <div key={p.title} className="rounded-2xl overflow-hidden border border-gray-200">
@@ -1462,8 +1649,8 @@ export default function App() {
 
               {/* ══════ YEARLY SUMMARY ══════ */}
               {tab==='yearlysummary'&&(
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-5">
+                <div className="p-4 sm:p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-5 gap-3">
                     <SectionHead title="Yearly Salary Summary" subtitle={`${fullName} · Auto-increment & DA · Editable deductions (yellow cells)`} icon={BarChart3} accent="#d97706"/>
                     <div className="flex items-center gap-2 mt-[-0.5rem] flex-wrap justify-end">
                       <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
@@ -1472,10 +1659,10 @@ export default function App() {
                       </div>
                       <button onClick={()=>setManDed({})} className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-red-500 bg-red-50 border border-red-200 rounded-xl hover:bg-red-100"><RotateCcw size={11}/> Reset Ded.</button>
                       <button onClick={()=>downloadPDF(yearlyRef,`Yearly_${emp.name}_${yearlyFY}`,'l')} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-200 border border-gray-300"><Download size={12}/> PDF</button>
-                      <button onClick={exportYearly} className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold hover:bg-emerald-100"><TableProperties size={12}/> CSV</button>
+                      <button onClick={exportYearly} className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold hover:bg-emerald-100"><TableProperties size={12}/> Excel</button>
                     </div>
                   </div>
-                  <div ref={yearlyRef} className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                  <div ref={yearlyRef} className="overflow-x-auto rounded-xl border border-gray-200 bg-white -mx-2 sm:mx-0">
                     <div className="p-3 bg-amber-700 text-white text-center">
                       <p className="text-sm font-black uppercase">{sysConfig.collegeName}</p>
                       <p className="text-xs mt-0.5">{fullName} · {emp.designation} · FY {yearlyFY}</p>
@@ -1531,11 +1718,11 @@ export default function App() {
 
               {/* ══════ ARREARS ══════ */}
               {tab==='arrears'&&(
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-5">
+                <div className="p-4 sm:p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-5 gap-3">
                     <SectionHead title="Arrear Calculator" subtitle={`${fullName} · Salary Arrear & DA Arrear · Auto-increment & DA History`} icon={History} accent="#dc2626"/>
                     <div className="flex gap-2 mt-[-0.5rem]">
-                      {arrSubTab==='salary'&&arrRows.length>0&&<button onClick={exportArrears} className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold hover:bg-emerald-100"><TableProperties size={12}/> Export CSV</button>}
+                      {arrSubTab==='salary'&&arrRows.length>0&&<button onClick={exportArrears} className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold hover:bg-emerald-100"><TableProperties size={12}/> Excel</button>}
                     </div>
                   </div>
                   <div className="flex gap-1 p-1 bg-gray-100 rounded-xl mb-6 w-fit">
@@ -1548,7 +1735,7 @@ export default function App() {
 
                   {arrSubTab==='salary'&&(
                     <>
-                      <div className="grid grid-cols-3 gap-4 mb-4 p-4 bg-gray-50 border border-gray-200 rounded-xl">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4 p-4 bg-gray-50 border border-gray-200 rounded-xl">
                         <div><Lbl c="Start Month"/><input type="month" value={arrCfg.startMonth} onChange={e=>setArrCfg(p=>({...p,startMonth:e.target.value}))} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400"/></div>
                         <div><Lbl c="End Month"/><input type="month" value={arrCfg.endMonth} onChange={e=>setArrCfg(p=>({...p,endMonth:e.target.value}))} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400"/></div>
                         <div><Lbl c="Pay Level"/><TSel value={arrCfg.level} onChange={(v:string)=>setArrCfg(p=>({...p,level:Number(v)}))} options={Object.keys(PAY_MATRIX).map(l=>({value:Number(l),label:`Level ${l}`}))}/></div>
@@ -1612,7 +1799,7 @@ export default function App() {
 
                   {arrSubTab==='da'&&(
                     <>
-                      <div className="grid grid-cols-3 gap-4 mb-4 p-4 bg-gray-50 border border-gray-200 rounded-xl">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4 p-4 bg-gray-50 border border-gray-200 rounded-xl">
                         <div><Lbl c="Start Month"/><input type="month" value={daArrCfg.startMonth} onChange={e=>setDaArrCfg(p=>({...p,startMonth:e.target.value}))} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/></div>
                         <div><Lbl c="End Month"/><input type="month" value={daArrCfg.endMonth} onChange={e=>setDaArrCfg(p=>({...p,endMonth:e.target.value}))} className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/></div>
                         <div><Lbl c="Pay Level"/><TSel value={daArrCfg.level} onChange={(v:string)=>setDaArrCfg(p=>({...p,level:Number(v)}))} options={Object.keys(PAY_MATRIX).map(l=>({value:Number(l),label:`Level ${l}`}))}/></div>
@@ -1672,15 +1859,15 @@ export default function App() {
 
               {/* ══════ SALARY BILL ══════ */}
               {tab==='salarybill'&&(
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-5">
+                <div className="p-4 sm:p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-5 gap-3">
                     <SectionHead title="Salary Bill — Official Format" subtitle="Matching reference image format · Multi-employee · Old & New joiner support" icon={ClipboardList} accent="#4f46e5"/>
                     <div className="flex gap-2 mt-[-0.5rem]">
                       <button onClick={()=>setSbEmps([])  } className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-red-500 bg-red-50 border border-red-200 rounded-xl hover:bg-red-100"><RotateCcw size={11}/> Clear</button>
                       <button onClick={()=>downloadPDF(billRef,`Salary_Bill_${sbCfg.month}_${sbCfg.year}`,'l')} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow"><Download size={14}/> Download PDF</button>
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-3 mb-4 p-4 bg-indigo-50 border border-indigo-200 rounded-xl">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4 p-4 bg-indigo-50 border border-indigo-200 rounded-xl">
                     <div><Lbl c="Month"/><TSel value={sbCfg.month} onChange={v=>setSbCfg(p=>({...p,month:v}))} options={MONTHS_FULL}/></div>
                     <div><Lbl c="Year"/><TSel value={sbCfg.year} onChange={(v:string)=>setSbCfg(p=>({...p,year:v}))} options={YEARS}/></div>
                     <div><Lbl c="DA %"/><TSel value={sbCfg.da} onChange={(v:string)=>setSbCfg(p=>({...p,da:Number(v)}))} options={[65,61,57,53,50,46,42,38,34].map(d=>({value:d,label:d+'%'}))}/></div>
@@ -1773,10 +1960,10 @@ export default function App() {
 
               {/* ══════ ANNUAL STATEMENT ══════ */}
               {tab==='annualstatement'&&(
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-5">
+                <div className="p-4 sm:p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-5 gap-3">
                     <SectionHead title="Annual Salary Statement (Form 16 Est.)" subtitle={`${fullName} · PAN: ${emp.panNumber||'—'} · FY ${emp.financialYear}`} icon={FileSpreadsheet} accent="#0d9488"/>
-                    <div className="flex items-center gap-2 mt-[-0.5rem]">
+                    <div className="flex flex-wrap items-center gap-2">
                       <div className="flex items-center gap-1.5 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2">
                         <span className="text-[10px] font-bold text-teal-700">FY</span>
                         <select value={emp.financialYear} onChange={e=>setEmp((p:EmployeeData)=>({...p,financialYear:e.target.value}))} className="bg-transparent text-sm font-bold text-teal-900 focus:outline-none">{FY_YEARS.map(y=><option key={y}>{y}</option>)}</select>
@@ -1875,7 +2062,7 @@ export default function App() {
                 const taxNew=calcTax(txNew,'new');
                 const better=taxNew<taxOld?'new':'old';
                 return (
-                  <div className="p-6">
+                  <div className="p-4 sm:p-5">
                     <SectionHead title="Income Tax — Both Regimes Side by Side" subtitle={`FY ${emp.financialYear} · 87A Rebate auto-applied · Annual comparison`} icon={Receipt} accent="#ea580c"/>
                     <div className="p-4 bg-green-50 border border-green-200 rounded-xl mb-6 flex items-start gap-3">
                       <CheckCircle2 size={16} className="text-green-600 shrink-0 mt-0.5"/>
@@ -2040,7 +2227,7 @@ export default function App() {
                 const fmtDate = (d:Date|null) => d ? d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—';
 
                 return (
-                <div className="p-6">
+                <div className="p-4 sm:p-5">
                   <SectionHead title="Retirement & Gratuity Benefits" subtitle={`${fullName} · DOB-based calculation · Superannuation age: 60 years`} icon={Award} accent="#eab308"/>
 
                   {/* ── Missing fields warning ── */}
@@ -2503,11 +2690,11 @@ export default function App() {
                 });
 
                 return (
-                <div className="p-6 space-y-6">
+                <div className="p-4 sm:p-6 space-y-5">
                   <SectionHead title="Advanced Financial Planner" subtitle={`${fullName} · NPS Tracker · Salary Timeline · Tax Projection · Corpus Calculator`} icon={TrendingUp} accent="#6366f1"/>
 
                   {/* ── TOP STATS ── */}
-                  <div className="grid grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     {[
                       {l:'Monthly NPS (Total)', v:rs(totalNPSPerMonth), sub:`Emp: ${rs(npsEmp7)} + Govt: ${rs(npsEr7)}`, col:'#7c3aed', icon:Shield},
                       {l:'Annual NPS Contribution', v:rs(totalNPSPerMonth*12), sub:'Employee + Employer', col:'#4f46e5', icon:TrendingUp},
@@ -2724,7 +2911,7 @@ export default function App() {
 
               {/* ══════ SETTINGS ══════ */}
               {tab==='settings'&&(
-                <div className="p-6">
+                <div className="p-4 sm:p-5">
                   <SectionHead title="Admin Settings" subtitle="College details, logo & global configuration" icon={Settings} accent="#475569"/>
                   <div className="grid grid-cols-2 gap-8">
                     <div className="space-y-5">
@@ -2779,7 +2966,28 @@ export default function App() {
         </main>
       </div>
 
-      <footer className="py-4 text-center text-[10px] text-gray-400 border-t border-gray-200 mt-4">
+      {/* ── MOBILE BOTTOM NAVIGATION ── */}
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 shadow-lg">
+        <div className="grid grid-cols-5 gap-0">
+          {[
+            {id:'dashboard',  icon:LayoutDashboard,  label:'Home'},
+            {id:'profiles',   icon:Users,             label:'Staff'},
+            {id:'salary',     icon:IndianRupee,       label:'Salary'},
+            {id:'yearlysummary',icon:BarChart3,        label:'Yearly'},
+            {id:'settings',   icon:Settings,          label:'More'},
+          ].map(item=>(
+            <button key={item.id} onClick={()=>setTab(item.id as TabType)}
+              className={`flex flex-col items-center justify-center py-2 gap-0.5 transition-all ${tab===item.id?'text-green-600':'text-gray-400'}`}>
+              <item.icon size={20} strokeWidth={tab===item.id?2.5:1.5}/>
+              <span className="text-[9px] font-bold">{item.label}</span>
+            </button>
+          ))}
+        </div>
+      </nav>
+      {/* Bottom padding for mobile nav */}
+      <div className="h-16 sm:hidden"/>
+
+      <footer className="py-6 px-4 text-center text-[10px] text-gray-400 border-t border-gray-200 mt-4">
         <p className="font-bold">{sysConfig.collegeName} · Pay Manager Pro v8.0 Ultra Premium</p>
         <p className="mt-0.5">Non-Teaching Staff Salary Calculator · 7th/8th CPC · Jharkhand Government</p>
       </footer>
