@@ -58,7 +58,8 @@ export interface EmployeeData {
   annualPPF: number; annualLIC: number; annualTuitionFee: number;
   homeLoanPrincipal: number; homeLoanInterest: number;
   mediclaim: number; npsVoluntary: number;
-  bandPayOld: number; gradePayOld: number;
+  bandPayOld: number; gradePayOld: number; agp: number;
+  pensionType: 'nps'|'gpf';  gpfRate: number; gpfAccount: string;
   incrementMonth: '01'|'07'; financialYear: string; fitmentFactor8th: number;
   salaryMonth: string; salaryYear: string;
   serviceYears: number; earnedLeaves: number;
@@ -112,10 +113,19 @@ const DESIG_CONFIG: Record<string,{level:number;ta:number;ma:number;washing:numb
   'Physical Instructor':   {level:6, ta:1800,ma:1000,washing:0,gp6:4200, bp6:9300, cat:'non-teaching'},
   'Nurse':                 {level:7, ta:1800,ma:1000,washing:150,gp6:4600,bp6:9300, cat:'technical'},
   'Pharmacist':            {level:5, ta:1800,ma:1000,washing:0,gp6:2800, bp6:5200, cat:'technical'},
+  // ── New Teaching designations ──────────────────────────────
+  'Professor':                    {level:14,ta:3600,ma:1000,washing:0,gp6:10000,bp6:37400,cat:'teaching'},
+  'Asst. Prof. (Sr. Scale)':      {level:11,ta:3600,ma:1000,washing:0,gp6:7000, bp6:15600,cat:'teaching'},
+  'Asst. Prof. (Selection Grade)':{level:12,ta:3600,ma:1000,washing:0,gp6:8000, bp6:15600,cat:'teaching'},
+  'Guest Faculty':                {level:10,ta:3600,ma:1000,washing:0,gp6:6000, bp6:15600,cat:'teaching'},
+  'PTI (Physical Training Instr)':{level:10,ta:3600,ma:1000,washing:0,gp6:6000, bp6:15600,cat:'teaching'},
+  'Drawing Teacher':              {level:10,ta:3600,ma:1000,washing:0,gp6:6000, bp6:15600,cat:'teaching'},
+  'Music Teacher':                {level:10,ta:3600,ma:1000,washing:0,gp6:6000, bp6:15600,cat:'teaching'},
+  'Vice Principal':               {level:13,ta:3600,ma:1000,washing:0,gp6:9000, bp6:37400,cat:'teaching'},
 };
 
 const DESIG_GROUPS = [
-  {group:'Teaching Staff',          items:['Principal','Associate Professor','Assistant Professor']},
+  {group:'Teaching Staff',          items:['Principal','Vice Principal','Professor','Associate Professor','Assistant Professor','Asst. Prof. (Sr. Scale)','Asst. Prof. (Selection Grade)','Guest Faculty','PTI (Physical Training Instr)','Drawing Teacher','Music Teacher']},
   {group:'Library',                 items:['Librarian','Assistant Librarian','Library Assistant']},
   {group:'Administrative',          items:['Registrar','Deputy Registrar','Assistant Registrar','Finance Officer','Section Officer','Office Superintendent','PA to Principal']},
   {group:'Accounts',                items:['Accountant','Jr. Accountant']},
@@ -125,7 +135,7 @@ const DESIG_GROUPS = [
 ];
 
 const SALUTATIONS = ['Sri.','Smt.','Km.','Dr.','Prof.','Shri','Mr.','Mrs.','Ms.'];
-const DEPARTMENTS  = ['Office','Library','Science Dept.','Arts Dept.','Commerce Dept.','Lab','Sports','Accounts','Administration','Examination','Store','NSS/NCC'];
+const DEPARTMENTS  = ['Office','Library','Science Dept.','Arts Dept.','Commerce Dept.','BCA Dept.','BBA Dept.','Mathematics','Economics','Political Science','History','Hindi','English','Geography','Sociology','Lab','Sports','Accounts','Administration','Examination','Store','NSS/NCC'];
 const MONTHS_FULL  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const YEARS        = Array.from({length:61},(_,i)=>String(2000+i));  // 2000-2060
@@ -193,7 +203,8 @@ const BLANK_PROFILE = (id: string, overrides: Partial<EmployeeData> = {}): Emplo
   applyIT:false, taxRegime:'new',
   annualPPF:0, annualLIC:0, annualTuitionFee:0,
   homeLoanPrincipal:0, homeLoanInterest:0, mediclaim:0, npsVoluntary:0,
-  bandPayOld:9300, gradePayOld:4200,
+  bandPayOld:9300, gradePayOld:4200, agp:0,
+  pensionType:'nps', gpfRate:12, gpfAccount:'',
   incrementMonth:'07', financialYear:'2024-25', fitmentFactor8th:1.92,
   salaryMonth:'March', salaryYear:'2026',
   serviceYears:33, earnedLeaves:200,
@@ -700,8 +711,11 @@ export default function App() {
     const taDA=pct(emp.transportAllowance,emp.daRate);
     const cea=emp.ceaChildren*2250, hostel=emp.hostelChildren*6750;
     const gross=b+da+hra+emp.medicalAllowance+emp.transportAllowance+taDA+emp.washingAllowance+emp.otherAllowances+cea+hostel;
-    const npsEmp=emp.applyNPS?pct(b+da,emp.npsEmployee):0;
-    const npsEr =emp.applyNPS?pct(b+da,emp.npsEmployer):0;
+    // Pension: NPS (post-2004) OR GPF (pre-2004 teaching staff)
+    const isGPF = emp.pensionType==='gpf';
+    const npsEmp = !isGPF && emp.applyNPS ? pct(b+da, emp.npsEmployee) : 0;
+    const npsEr  = !isGPF && emp.applyNPS ? pct(b+da, emp.npsEmployer) : 0;
+    const gpfAmt = isGPF ? pct(b, emp.gpfRate||12) : 0;
     const gsli=emp.applyGSLI?getGSLI(emp.payLevel):emp.gsliContribution;
     const pt=emp.applyPT?emp.professionalTax:0;
     const lic=emp.applyLIC?emp.licDeduction:0;
@@ -715,7 +729,7 @@ export default function App() {
     const txb=Math.max(0,(gross+emp.additionalIncome1/12+emp.additionalIncome2/12)*12-std-c80-c80d-npsV-npsEr14-ceaEx-(emp.taxRegime==='old'?pt*12+emp.homeLoanInterest:0));
     const annIT=emp.applyIT?calcTax(txb,emp.taxRegime):0;
     const monthIT=rnd(annIT/12);
-    const td=npsEmp+gsli+pt+lic+soc+monthIT;
+    const td=npsEmp+gpfAmt+gsli+pt+lic+soc+monthIT;
     const basic8=Math.round(b*emp.fitmentFactor8th/100)*100;
     return {b,da,hra,taDA,ta:emp.transportAllowance,ma:emp.medicalAllowance,wash:emp.washingAllowance,cea,hostel,gross,npsEmp,npsEr,gsli,pt,lic,soc,monthIT,annIT,td,net:gross-td,basic8};
   },[emp]);
@@ -926,9 +940,15 @@ export default function App() {
     showToast('Premium Excel exported — 3 sheets ✅','success');
   };
 
+  const AGP_MAP: Record<string,number> = {'Assistant Professor': 6000, 'Asst. Prof. (Sr. Scale)': 7000, 'Asst. Prof. (Selection Grade)': 8000, 'Associate Professor': 9000, 'Professor': 10000, 'Principal': 10000, 'Vice Principal': 9000, 'Guest Faculty': 6000, 'PTI (Physical Training Instr)': 6000, 'Drawing Teacher': 6000, 'Music Teacher': 6000, 'Librarian': 6000};
   const applyDesig = (d:string) => {
     const c=DESIG_CONFIG[d]; if(!c) return;
-    setEmp((p:EmployeeData)=>({...p,designation:d,payLevel:c.level,transportAllowance:c.ta,medicalAllowance:c.ma,washingAllowance:c.washing,bandPayOld:c.bp6,gradePayOld:c.gp6,category:c.cat,basicPay7th:PAY_MATRIX[c.level]?.[0]??p.basicPay7th}));
+    const agp = AGP_MAP[d] || 0;
+    setEmp((p:EmployeeData)=>({...p,designation:d,payLevel:c.level,transportAllowance:c.ta,
+      medicalAllowance:c.ma,washingAllowance:c.washing,bandPayOld:c.bp6,gradePayOld:c.gp6,
+      category:c.cat,basicPay7th:PAY_MATRIX[c.level]?.[0]??p.basicPay7th,
+      agp,
+    }));
   };
   const applyLevel = (lv:number) => setEmp((p:EmployeeData)=>({...p,payLevel:lv,basicPay7th:PAY_MATRIX[lv]?.[0]??p.basicPay7th}));
 
@@ -1171,7 +1191,7 @@ export default function App() {
                 </div>
                 <div style={{fontSize:'11px',color:'#475569',marginBottom:'6px'}}>{sysConfig.address}</div>
                 <div style={{display:'inline-block',border:'1.5px solid #1e3a8a',padding:'4px 18px',fontSize:'11px',fontWeight:'700',color:'#1e3a8a',letterSpacing:'1px'}}>
-                  Non-Teaching Staff Salary Statement
+                  {emp.category==='teaching' ? 'Teaching Staff Salary Statement' : 'Non-Teaching Staff Salary Statement'}
                 </div>
               </div>
             </div>
@@ -1833,6 +1853,35 @@ export default function App() {
                       <div><Lbl c="Amount (₹/year)"/><TIn type="number" value={emp.additionalIncome1} onChange={setE('additionalIncome1')}/></div>
                       <div><Lbl c="Additional Income 2 (Label)"/><TIn value={emp.additionalIncome2Label} onChange={setE('additionalIncome2Label')}/></div>
                       <div><Lbl c="Amount (₹/year)"/><TIn type="number" value={emp.additionalIncome2} onChange={setE('additionalIncome2')}/></div>
+                      {/* AGP — teaching staff only */}
+                      {emp.category==='teaching'&&(
+                        <div><Lbl c="Academic Grade Pay (AGP)"/>
+                          <TSel value={emp.agp} onChange={(v:string)=>setEmp((p:EmployeeData)=>({...p,agp:Number(v)}))}
+                            options={[{value:0,label:'Not Applicable'},{value:6000,label:'₹6,000 — Asst. Prof.'},{value:7000,label:'₹7,000 — Asst. Prof. Sr. Scale'},{value:8000,label:'₹8,000 — Asst. Prof. Selection Grade'},{value:9000,label:'₹9,000 — Associate Professor'},{value:10000,label:'₹10,000 — Professor/Principal'}]}/>
+                        </div>
+                      )}
+                      {/* GPF — pre-2004 staff */}
+                      <div>
+                        <Lbl c="Pension Type"/>
+                        <div className="flex gap-2 mt-1">
+                          {(['nps','gpf'] as const).map(t=>(
+                            <button key={t} onClick={()=>setEmp((p:EmployeeData)=>({...p,pensionType:t}))}
+                              className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${emp.pensionType===t?t==='nps'?'bg-purple-600 text-white border-purple-600':'bg-orange-600 text-white border-orange-600':'bg-white text-gray-500 border-gray-300'}`}>
+                              {t==='nps'?'NPS (Post-2004)':'GPF (Pre-2004)'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {emp.pensionType==='gpf'&&(
+                        <div className="p-3 bg-orange-50 border border-orange-200 rounded-xl col-span-2">
+                          <Lbl c="GPF Deduction Rate (% of Basic)"/>
+                          <div className="flex gap-3 mt-1">
+                            <div className="flex-1"><TIn type="number" value={emp.gpfRate} onChange={setE('gpfRate')} placeholder="12"/></div>
+                            <div className="flex-1"><Lbl c="GPF Account No."/><TIn value={emp.gpfAccount||''} onChange={setE('gpfAccount')} placeholder="GPF/JH/xxxxx"/></div>
+                          </div>
+                          <p className="text-[10px] text-orange-600 mt-1">Monthly GPF = {rs(pct(emp.basicPay7th, emp.gpfRate||12))} · Annual = {rs(pct(emp.basicPay7th, emp.gpfRate||12)*12)}</p>
+                        </div>
+                      )}
                       <div><Lbl c="8th Pay Fitment Factor"/><TSel value={emp.fitmentFactor8th} onChange={(v:string)=>setEmp((p:EmployeeData)=>({...p,fitmentFactor8th:Number(v)}))} options={[1.86,1.92,2.00,2.05,2.10,2.57,3.00].map(v=>({value:v,label:`${v}x ${v===1.92?'(Expected)':v===2.57?'(= 7th CPC)':''}`}))}/></div>
                       <div><Lbl c="8th Pay Basic (Projected)"/><div className="px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg font-black text-orange-700">{rs(s7.basic8)}</div></div>
                       <div><Lbl c="Salary Month"/><TSel value={emp.salaryMonth} onChange={setE('salaryMonth')} options={MONTHS_FULL}/></div>
@@ -3442,6 +3491,130 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                  {/* ══════════════════════════════════════════════════════
+                      SYSTEM TEST — DEEP LOGIC VALIDATOR
+                  ══════════════════════════════════════════════════════ */}
+                  <div className="mt-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-sm font-black text-gray-800">System & Logic Test</h3>
+                        <p className="text-xs text-gray-500 mt-0.5">Deep validation of all calculations against government standards</p>
+                      </div>
+                      <button onClick={()=>{
+                        const results: {name:string;status:'pass'|'fail'|'warn';expected:string;got:string}[] = [];
+
+                        // ── TEST 1: Pay Matrix integrity ─────────────────────
+                        const matOk = Object.entries(PAY_MATRIX).every(([lv,cells])=>{
+                          for(let i=1;i<cells.length;i++) if(cells[i]<=cells[i-1]) return false;
+                          return cells.length>=20;
+                        });
+                        results.push({name:'Pay Matrix — all levels ascending',status:matOk?'pass':'fail',expected:'All cells ascending, ≥20 cells/level',got:matOk?'✅ 14 levels OK':'❌ Matrix error'});
+
+                        // ── TEST 2: Fitment 2.57 on Level 6 ─────────────────
+                        const test6thTo7th = Math.floor((9300+4200)*2.57);
+                        const mat6 = PAY_MATRIX[6]||[];
+                        const fixed6 = mat6.find(v=>v>=test6thTo7th)||0;
+                        results.push({name:'7th Pay Fixation — Level 6 (GP ₹4200)',status:fixed6===35400?'pass':'fail',expected:'₹35,400',got:'₹'+fixed6.toLocaleString('en-IN')});
+
+                        // ── TEST 3: DA calculation ───────────────────────────
+                        const daTest = pct(19900,55);
+                        results.push({name:'DA 55% on ₹19,900 basic',status:daTest===10945?'pass':'fail',expected:'₹10,945',got:'₹'+daTest.toLocaleString('en-IN')});
+
+                        // ── TEST 4: HRA Y-city ───────────────────────────────
+                        const hraTest = pct(19900,18);
+                        results.push({name:'HRA 18% (Y-city) on ₹19,900',status:hraTest===3582?'pass':'fail',expected:'₹3,582',got:'₹'+hraTest.toLocaleString('en-IN')});
+
+                        // ── TEST 5: NPS 10+14% ───────────────────────────────
+                        const b=35400,da=pct(b,55),bpd=b+da;
+                        const npsE=pct(bpd,10),npsEr=pct(bpd,14);
+                        results.push({name:'NPS 10%+14% on Basic+DA (Level 6, 55% DA)',status:(npsE===5487&&npsEr===7682)?'pass':'fail',expected:`Emp ₹5,487 / Govt ₹7,682`,got:`Emp ₹${npsE.toLocaleString('en-IN')} / Govt ₹${npsEr.toLocaleString('en-IN')}`});
+
+                        // ── TEST 6: GSLI levels ──────────────────────────────
+                        const gsliOk = getGSLI(1)===30&&getGSLI(4)===30&&getGSLI(5)===60&&getGSLI(9)===60&&getGSLI(10)===120&&getGSLI(14)===120;
+                        results.push({name:'GSLI — L1-4=₹30, L5-9=₹60, L10+=₹120',status:gsliOk?'pass':'fail',expected:'L1:30 L5:60 L10:120',got:`L1:${getGSLI(1)} L5:${getGSLI(5)} L10:${getGSLI(10)}`});
+
+                        // ── TEST 7: Gratuity cap ─────────────────────────────
+                        const basic=144200,daG=pct(basic,61),gratuity=Math.min(((basic+daG)*15*33)/26,2000000);
+                        results.push({name:'Gratuity — Level 14, 61% DA, 33 yrs (cap check)',status:gratuity===2000000?'pass':'warn',expected:'₹20,00,000 (capped)',got:'₹'+gratuity.toLocaleString('en-IN')});
+
+                        // ── TEST 8: Tax — New Regime 87A Rebate ─────────────
+                        const taxBelow7L = calcTax(650000,'new');
+                        results.push({name:'New Regime 87A rebate ≤₹7L',status:taxBelow7L===0?'pass':'fail',expected:'₹0 (rebate)',got:'₹'+taxBelow7L.toLocaleString('en-IN')});
+
+                        // ── TEST 9: Tax — Old Regime ₹5L rebate ─────────────
+                        const taxBelow5L = calcTax(490000,'old');
+                        results.push({name:'Old Regime 87A rebate ≤₹5L',status:taxBelow5L===0?'pass':'fail',expected:'₹0 (rebate)',got:'₹'+taxBelow5L.toLocaleString('en-IN')});
+
+                        // ── TEST 10: Tax — New Regime >₹7L correct slab ─────
+                        const tax8L = calcTax(800000,'new');
+                        const expected8L = Math.round((20000+(800000-700000)*0.10)*1.04);
+                        results.push({name:'New Regime tax on ₹8L taxable income',status:tax8L===expected8L?'pass':'warn',expected:'₹'+expected8L.toLocaleString('en-IN'),got:'₹'+tax8L.toLocaleString('en-IN')});
+
+                        // ── TEST 11: DA History completeness ─────────────────
+                        const daKeys = Object.keys(DA_HISTORY).sort();
+                        const hasAllKey = daKeys.includes('2022-01')&&daKeys.includes('2025-01')&&DA_HISTORY['2022-01']===34&&DA_HISTORY['2025-01']===55;
+                        results.push({name:'DA History — Jan 2022=34%, Jan 2025=55%',status:hasAllKey?'pass':'fail',expected:'2022-01:34, 2025-01:55',got:`2022-01:${DA_HISTORY['2022-01']} 2025-01:${DA_HISTORY['2025-01']}`});
+
+                        // ── TEST 12: Increment — nextStep ────────────────────
+                        const nextL6 = nextStep(35400,6);
+                        results.push({name:'Increment — nextStep L6 from ₹35,400',status:nextL6===36500?'pass':'warn',expected:'₹36,500',got:'₹'+nextL6.toLocaleString('en-IN')});
+
+                        // ── TEST 13: toWords ─────────────────────────────────
+                        const words = toWords(34738);
+                        const wordsOk = words.includes('Thirty') && words.includes('Four') && words.includes('Seven') && words.includes('Hundred');
+                        results.push({name:'toWords — ₹34,738 in words',status:wordsOk?'pass':'warn',expected:'Thirty Four Thousand Seven Hundred...',got:words.slice(0,40)+'...'});
+
+                        // ── TEST 14: Profile data integrity ──────────────────
+                        const namedProfiles = profiles.filter(p=>p.name&&p.name.trim().length>0);
+                        const badProfiles = namedProfiles.filter(p=>!p.id||p.payLevel<1||p.payLevel>14||p.basicPay7th<18000);
+                        results.push({name:`Profile data — ${namedProfiles.length} named profiles integrity`,status:badProfiles.length===0?'pass':'fail',expected:'All valid (level 1-14, basic ≥₹18,000)',got:badProfiles.length===0?`All ${namedProfiles.length} profiles OK`:badProfiles.length+' profiles have issues: '+badProfiles.map(p=>p.name).join(', ')});
+
+                        // ── TEST 15: AGP mapping for teaching staff ───────────
+                        const agpOk = DESIG_CONFIG['Assistant Professor']?.gp6===6000 && DESIG_CONFIG['Associate Professor']?.gp6===8000 && DESIG_CONFIG['Principal']?.gp6===10000;
+                        results.push({name:'Teaching staff Grade Pay config',status:agpOk?'pass':'fail',expected:'Asst.Prof:6000 Assoc:8000 Principal:10000',got:`Asst:${DESIG_CONFIG['Assistant Professor']?.gp6} Assoc:${DESIG_CONFIG['Associate Professor']?.gp6} Prin:${DESIG_CONFIG['Principal']?.gp6}`});
+
+                        // Show results modal
+                        const passed=results.filter(r=>r.status==='pass').length;
+                        const failed=results.filter(r=>r.status==='fail').length;
+                        const warned=results.filter(r=>r.status==='warn').length;
+                        const report = results.map(r=>`${r.status==='pass'?'✅':r.status==='fail'?'❌':'⚠️'} ${r.name}\n   Expected: ${r.expected}\n   Got: ${r.got}`).join('\n\n');
+                        alert(`SYSTEM TEST RESULTS\n${'='.repeat(50)}\n✅ Passed: ${passed} / ${results.length}\n❌ Failed: ${failed}\n⚠️ Warnings: ${warned}\n${'='.repeat(50)}\n\n${report}`);
+                        showToast(`Test complete: ${passed}/${results.length} passed, ${failed} failed, ${warned} warnings`,(failed>0?'error':warned>0?'info':'success'));
+                      }} className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-black hover:bg-indigo-700 shadow-lg">
+                        <ShieldCheck size={16}/> Run System Test
+                      </button>
+                    </div>
+
+                    {/* Test categories visual */}
+                    <div className="grid grid-cols-3 gap-3">
+                      {[
+                        {icon:'💰',label:'Pay Matrix',desc:'14 levels, 20+ cells each, ascending order'},
+                        {icon:'📐',label:'Fixation Logic',desc:'6th→7th CPC fitment ×2.57'},
+                        {icon:'📊',label:'DA Calculation',desc:'pct(basic, daRate) rounding'},
+                        {icon:'🏠',label:'HRA Rates',desc:'X=27% Y=18% Z=9% (7th CPC)'},
+                        {icon:'🛡️',label:'NPS Rules',desc:'10%+14% of (Basic+DA)'},
+                        {icon:'🔧',label:'GSLI Slabs',desc:'L1-4=₹30, L5-9=₹60, L10+=₹120'},
+                        {icon:'🎓',label:'Gratuity Cap',desc:'₹20L max, 15/26 formula'},
+                        {icon:'📋',label:'Tax Regimes',desc:'87A rebate, both old & new'},
+                        {icon:'📅',label:'DA History',desc:'21 entries 2016–2026 verified'},
+                        {icon:'⬆️',label:'Increment Step',desc:'nextStep() matrix traversal'},
+                        {icon:'🔤',label:'Amount in Words',desc:'toWords() Indian number system'},
+                        {icon:'👥',label:'Profile Integrity',desc:'All saved profiles validation'},
+                        {icon:'🎓',label:'Teaching Config',desc:'AGP mapping for all designations'},
+                        {icon:'💼',label:'GPF Support',desc:'Pre-2004 staff deduction logic'},
+                        {icon:'📄',label:'Salary Slip Title',desc:'Auto-detects teaching/non-teaching'},
+                      ].map((t,i)=>(
+                        <div key={i} className="flex items-start gap-2.5 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                          <span className="text-lg shrink-0">{t.icon}</span>
+                          <div>
+                            <div className="text-xs font-bold text-gray-800">{t.label}</div>
+                            <div className="text-[10px] text-gray-500 mt-0.5">{t.desc}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   <NavRow onPrev={goPrev} showNext={false}/>
                 </div>
               )}

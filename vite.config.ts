@@ -27,6 +27,10 @@ export default defineConfig({
         // 2. Badi libraries ko alag-alag chunks mein divide kar rahe hain (Manual Chunking)
         manualChunks(id) {
           if (id.includes('node_modules')) {
+            // Firebase ko alag chunk mein daalna (Warning fix karne ke liye)
+            if (id.includes('firebase') || id.includes('@firebase')) {
+              return 'vendor-firebase';
+            }
             // Recharts ko alag chunk mein
             if (id.includes('recharts')) {
               return 'vendor-charts';
