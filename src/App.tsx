@@ -1,8 +1,19 @@
 /**
  * ╔══════════════════════════════════════════════════════════════════════════╗
- * ║  JHARKHAND PAY MASTER PRO — ULTRA PREMIUM EDITION v8.0                  ║
- * ║  Multi-Profile System · University & College Staff Calculator           ║
- * ║  7th/8th Pay · Fixation · MACP · Arrears · Tax · Salary Bill · Retire  ║
+ * ║   JHARKHAND PAY MASTER PRO — ULTRA PREMIUM EDITION v8.0                 ║
+ * ╠══════════════════════════════════════════════════════════════════════════╣
+ * ║   DEVELOPER  : Pankaj Kumar Prasad                                       ║
+ * ║   INSTITUTION: Guru Nanak College, Bhuda, Dhanbad, Jharkhand - 826001   ║
+ * ║   GITHUB     : https://github.com/pankajkumargnc                   ║
+ * ║   WEBSITE    : https://https://github.com/pankajkumargnc                                  ║
+ * ╠══════════════════════════════════════════════════════════════════════════╣
+ * ║   © 2026 Pankaj Kumar Prasad. All Rights Reserved.                       ║
+ * ║   This software is the exclusive intellectual property of                ║
+ * ║   Pankaj Kumar Prasad. Unauthorized copying, modification,               ║
+ * ║   distribution or use is STRICTLY PROHIBITED.                            ║
+ * ║   For permissions: contact via GitHub above.                             ║
+ * ╠══════════════════════════════════════════════════════════════════════════╣
+ * ║   7th/8th Pay · MACP · NPS · Retirement · Tax · Salary Bill · Arrears   ║
  * ╚══════════════════════════════════════════════════════════════════════════╝
  */
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
@@ -2987,9 +2998,37 @@ export default function App() {
       {/* Bottom padding for mobile nav */}
       <div className="h-16 sm:hidden"/>
 
-      <footer className="py-6 px-4 text-center text-[10px] text-gray-400 border-t border-gray-200 mt-4">
-        <p className="font-bold">{sysConfig.collegeName} · Pay Manager Pro v8.0 Ultra Premium</p>
-        <p className="mt-0.5">Non-Teaching Staff Salary Calculator · 7th/8th CPC · Jharkhand Government</p>
+      <footer className="py-5 px-4 border-t border-gray-200 mt-4 bg-gradient-to-r from-gray-50 to-gray-100">
+        <div className="max-w-screen-2xl mx-auto text-center space-y-2">
+          {/* App title */}
+          <p className="text-xs font-black text-gray-800 tracking-wide">
+            {sysConfig.collegeName} — Jharkhand Pay Master Pro v8.0 Ultra Premium
+          </p>
+          <p className="text-[10px] text-gray-500">
+            Non-Teaching Staff Salary Calculator · 7th &amp; 8th Pay Commission · Jharkhand Government
+          </p>
+          {/* Owner badges */}
+          <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+            <span className="text-[10px] px-3 py-1 bg-green-50 border border-green-300 text-green-800 rounded-full font-black">
+              👨‍💻 Pankaj Kumar Prasad
+            </span>
+            <span className="text-[10px] px-3 py-1 bg-blue-50 border border-blue-200 text-blue-700 rounded-full font-bold">
+              🏛 Guru Nanak College, Dhanbad
+            </span>
+            <a href="https://github.com/pankajkumargnc"
+              target="_blank" rel="noopener noreferrer"
+              className="text-[10px] px-3 py-1 bg-gray-800 text-white rounded-full font-bold hover:bg-gray-700 transition-all flex items-center gap-1">
+              ⌨ GitHub
+            </a>
+            <span className="text-[10px] px-3 py-1 bg-red-50 border border-red-200 text-red-700 rounded-full font-black">
+              🔒 All Rights Reserved © 2026
+            </span>
+          </div>
+          {/* Legal line */}
+          <p className="text-[9px] text-gray-400 mt-1 italic">
+            © 2026 Pankaj Kumar Prasad. Unauthorized copying, distribution or modification is strictly prohibited.
+          </p>
+        </div>
       </footer>
     </div>
   );
